@@ -251,6 +251,46 @@
   .ws-count{flex:0 0 auto;font-size:10.5px;color:var(--fg-faint);background:var(--bg-3);border-radius:20px;padding:1px 7px}
   .ws-body{padding-left:10px;margin-left:13px;border-left:1px solid var(--line);margin-bottom:6px}
 
+  /* ---------- markdown blocks ---------- */
+  .bubble .md-p{margin:0}
+  .bubble .md-p + .md-p{margin-top:8px}
+  .bubble .md-h{font-weight:600;line-height:1.35;margin:10px 0 6px;color:var(--fg)}
+  .bubble .md-h1{font-size:17px}
+  .bubble .md-h2{font-size:16px}
+  .bubble .md-h3{font-size:15px}
+  .bubble .md-h4{font-size:14px;color:var(--fg-dim)}
+  .bubble .md-list{margin:6px 0;padding-left:22px}
+  .bubble .md-list li{margin:2px 0}
+  .bubble .md-quote{margin:8px 0;padding:4px 10px;border-left:3px solid var(--line);color:var(--fg-dim)}
+  .bubble .md-hr{border:0;border-top:1px solid var(--line);margin:10px 0}
+  .bubble a{color:#8ec5ff;text-decoration:underline}
+  .bubble .md-table-wrap{overflow-x:auto;margin:8px 0;border:1px solid var(--line);border-radius:9px;-webkit-overflow-scrolling:touch}
+  .bubble table{border-collapse:collapse;width:100%;font-size:12.8px;line-height:1.45;white-space:normal}
+  .bubble th,.bubble td{border-bottom:1px solid var(--line);border-right:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top;word-break:break-word}
+  .bubble th{background:var(--bg-3);font-weight:600;white-space:nowrap}
+  .bubble tr:last-child td{border-bottom:none}
+  .bubble td:last-child,.bubble th:last-child{border-right:none}
+
+  /* ---------- question card ---------- */
+  .question-card{margin:0 0 12px;border:1px solid #3f5f8f;background:#101d30;border-radius:12px;padding:12px}
+  .question-card .qtitle{font-size:13px;color:#8ec5ff;font-weight:600;margin-bottom:4px}
+  .question-card .qsess{font-size:11.5px;color:var(--warn);margin-bottom:8px;cursor:pointer;text-decoration:underline}
+  .question-card .qmeta{font-size:11px;color:var(--fg-faint);margin-bottom:6px}
+  .question-card .qitem + .qitem{margin-top:12px;padding-top:12px;border-top:1px dashed var(--line)}
+  .question-card .qheader{font-size:11px;color:var(--fg-faint);letter-spacing:.06em;margin-bottom:2px}
+  .question-card .qtext{font-size:14px;margin-bottom:4px;white-space:pre-wrap;word-break:break-word}
+  .question-card .qdetail{font-size:12.5px;color:var(--fg-dim);margin-bottom:8px;white-space:pre-wrap}
+  .question-card .qoptions{display:flex;flex-direction:column;gap:6px;margin:8px 0}
+  .question-card .qoption{display:flex;align-items:flex-start;gap:9px;background:var(--bg-2);border:1px solid var(--line);border-radius:10px;padding:9px 11px;cursor:pointer}
+  .question-card .qoption:active{background:var(--bg-3)}
+  .question-card .qoption input{margin:3px 0 0;accent-color:var(--accent);flex:0 0 auto}
+  .question-card .qoption-text{display:flex;flex-direction:column;gap:2px;min-width:0}
+  .question-card .qoption-label{font-size:14px}
+  .question-card .qoption-desc{font-size:11.5px;color:var(--fg-faint);line-height:1.4}
+  .question-card .qcustom{margin-top:6px}
+  .question-card .qrow{display:flex;gap:8px;margin-top:10px}
+  .question-card .qrow .btn{margin:0;padding:10px 14px;font-size:14px}
+
   /* ========================================================= v3: 竖屏适配 ==
      窄屏（手机竖屏）专用：更大的触控目标、键盘避让、代码块/工具卡换行、
      抽屉与底部面板的安全区处理。桌面宽屏不受影响。 */
@@ -287,6 +327,12 @@
     .ws-path{font-size:11px}
     .ws-count{font-size:11px;padding:2px 8px}
     .ws-body{margin-left:14px;padding-left:8px}
+    .question-card{padding:14px 12px}
+    .question-card .qtext{font-size:15px}
+    .question-card .qoption{min-height:46px;padding:11px 12px}
+    .question-card .qcustom{font-size:16px;padding:11px 12px}
+    .bubble table{font-size:12px}
+    .bubble th,.bubble td{padding:7px 8px}
     .sess{padding:12px 8px 12px 10px;min-height:56px;margin-bottom:4px}
     .sess .st{font-size:14.5px}
     .sess .l2{font-size:11.5px}
@@ -463,6 +509,8 @@ const CAPS = [
   "session.fork.v1",
   "workspace.v1",
   "agents.v1",
+  "questions.v1",
+  "questions.list.v1",
 ];
 
 const $ = (id) => document.getElementById(id);
@@ -633,6 +681,7 @@ const state = {
   running: false,
   lastSeq: 0,
   approvals: new Map(),   // id -> payload
+  questions: new Map(),   // sessionId/callId -> question payload
   reconnectAttempt: 0,
   intentionalStop: false,
   capsDeclared: [],
@@ -801,18 +850,268 @@ function finishStreaming() {
 /* ------------------------------------------------------------------ render */
 const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-function renderRich(text) {
+const MARKDOWN_DEMO = [
+  "# 标题演示 H1",
+  "## 二级标题 H2",
+  "### 三级标题 H3",
+  "",
+  "普通段落支持 **加粗**、*斜体*、`行内代码` 和 [链接](https://github.com/lty05042/dsh-mobile-web)。",
+  "",
+  "| 功能 | 状态 | 备注 |",
+  "| --- | :---: | ---: |",
+  "| 新建会话 | ✅ | 已实现 |",
+  "| 归档 | ✅ | 支持确认面板 |",
+  "| 取消归档 | ❌ | 桥不返回已归档会话 |",
+  "",
+  "- 列表项一",
+  "- 列表项二，带 `代码`",
+  "  - 嵌套项",
+  "",
+  "1. 有序列表",
+  "2. 第二项",
+  "",
+  "> 引用块：所有渲染都先转义，避免注入。",
+  "",
+  "```js",
+  "const safe = renderRich(text);",
+  'console.log("代码块保持原样");',
+  "```",
+  "",
+  "---",
+  "结束。",
+].join("\n");
+
+function inlineMarkdown(text) {
+  const codes = [];
   let out = escapeHtml(text);
-  const blocks = [];
-  out = out.replace(/```([\s\S]*?)```/g, (_, code) => {
-    blocks.push(code.replace(/^\w*\n/, ""));
-    return `\u0000CODE${blocks.length - 1}\u0000`;
+  // 行内代码先占位，避免其中的 * _ 被当成强调
+  out = out.replace(/`([^`\n]+)`/g, (_, code) => {
+    codes.push(`<code>${code}</code>`);
+    return `\u0000IC${codes.length - 1}\u0000`;
   });
-  out = out.replace(/`([^`\n]+)`/g, "<code>$1</code>");
-  out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-  out = out.replace(/\n/g, "<br>");
-  out = out.replace(/\u0000CODE(\d+)\u0000/g, (_, i) => `<pre><code>${blocks[Number(i)]}</code></pre>`);
+  out = out.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
+  out = out.replace(/(^|[^*\w])\*([^*\n]+)\*(?!\*)/g, (match, lead, body) => `${lead}<em>${body}</em>`);
+  out = out.replace(/~~([^~\n]+)~~/g, "<del>$1</del>");
+  out = out.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  out = out.replace(/\u0000IC(\d+)\u0000/g, (_, i) => codes[Number(i)]);
   return out;
+}
+
+function isTableSeparator(line) {
+  return /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/.test(line);
+}
+
+/** 渲染一小段 Markdown：标题 / 表格 / 列表 / 引用 / 分隔线 / 代码块 / 行内样式。 */
+function renderRich(text) {
+  const src = String(text ?? "").replace(/\r\n?/g, "\n");
+  const lines = src.split("\n");
+  const out = [];
+  let i = 0;
+
+  const startsBlock = (line, nextLine) =>
+    /^\s*(```\S*\s*$|#{1,6}\s|>\s?|([-*+]|\d+\.)\s+|([-*_])\2{2,}\s*$)/.test(line) ||
+    (line.includes("|") && typeof nextLine === "string" && isTableSeparator(nextLine));
+
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line.trim() === "") { i++; continue; }
+
+    // 代码块
+    let match = line.match(/^\s*```(\S*)\s*$/);
+    if (match) {
+      const lang = match[1];
+      const buffer = [];
+      i++;
+      while (i < lines.length && !/^\s*```\s*$/.test(lines[i])) { buffer.push(lines[i]); i++; }
+      if (i < lines.length) i++;
+      out.push(`<pre><code${lang ? ` class="lang-${escapeHtml(lang)}"` : ""}>${escapeHtml(buffer.join("\n"))}</code></pre>`);
+      continue;
+    }
+
+    // 标题
+    match = line.match(/^\s*(#{1,6})\s+(.*?)\s*#*\s*$/);
+    if (match) {
+      const level = Math.min(match[1].length, 4);
+      out.push(`<div class="md-h md-h${level}">${inlineMarkdown(match[2])}</div>`);
+      i++;
+      continue;
+    }
+
+    // 分隔线
+    if (/^\s*([-*_])\1{2,}\s*$/.test(line)) {
+      out.push('<hr class="md-hr">');
+      i++;
+      continue;
+    }
+
+    // 表格
+    if (line.includes("|") && i + 1 < lines.length && isTableSeparator(lines[i + 1])) {
+      const cells = (raw) => raw.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
+      const header = cells(line);
+      const aligns = cells(lines[i + 1]).map((cell) =>
+        cell.startsWith(":") && cell.endsWith(":") ? "center" : cell.endsWith(":") ? "right" : cell.startsWith(":") ? "left" : "");
+      i += 2;
+      const rows = [];
+      while (i < lines.length && lines[i].includes("|") && lines[i].trim() !== "") { rows.push(cells(lines[i])); i++; }
+      const head = header.map((cell, idx) => `<th${aligns[idx] ? ` style="text-align:${aligns[idx]}"` : ""}>${inlineMarkdown(cell)}</th>`).join("");
+      const body = rows.map((row) =>
+        `<tr>${header.map((_, idx) => `<td${aligns[idx] ? ` style="text-align:${aligns[idx]}"` : ""}>${inlineMarkdown(row[idx] ?? "")}</td>`).join("")}</tr>`).join("");
+      out.push(`<div class="md-table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`);
+      continue;
+    }
+
+    // 列表
+    if (/^\s*([-*+]|\d+\.)\s+/.test(line)) {
+      const ordered = /^\s*\d+\.\s+/.test(line);
+      const items = [];
+      while (i < lines.length && /^\s*([-*+]|\d+\.)\s+/.test(lines[i])) {
+        items.push(lines[i].replace(/^\s*([-*+]|\d+\.)\s+/, ""));
+        i++;
+      }
+      const tag = ordered ? "ol" : "ul";
+      out.push(`<${tag} class="md-list">${items.map((item) => `<li>${inlineMarkdown(item)}</li>`).join("")}</${tag}>`);
+      continue;
+    }
+
+    // 引用
+    if (/^\s*>\s?/.test(line)) {
+      const buffer = [];
+      while (i < lines.length && /^\s*>\s?/.test(lines[i])) {
+        buffer.push(lines[i].replace(/^\s*>\s?/, ""));
+        i++;
+      }
+      out.push(`<div class="md-quote">${inlineMarkdown(buffer.join(" "))}</div>`);
+      continue;
+    }
+
+    // 段落
+    const para = [];
+    while (i < lines.length && lines[i].trim() !== "" && !startsBlock(lines[i], lines[i + 1])) {
+      para.push(lines[i]);
+      i++;
+    }
+    if (!para.length) { para.push(lines[i]); i++; }
+    out.push(`<div class="md-p">${para.map(inlineMarkdown).join("<br>")}</div>`);
+  }
+  return out.join("");
+}
+
+/* ---------------------------------------------------------------- questions */
+function questionKeyOf(payload) { return `${payload.sessionId}/${payload.callId}`; }
+
+function questionSessionRow(payload) {
+  return state.sessions.find((row) => row.id === payload.sessionId);
+}
+
+function questionSessionLabel(payload) {
+  const row = questionSessionRow(payload);
+  return row ? (row.title || row.cwd || "(未命名会话)") : payload.sessionId;
+}
+
+function renderQuestion(payload) {
+  const card = el("div", "question-card");
+  card.appendChild(el("div", "qtitle", "需要你的回答"));
+  if (payload.sessionId !== state.current?.id) {
+    const hint = el("div", "qsess", `会话：${questionSessionLabel(payload)} · 点此切换`);
+    hint.onclick = () => { const row = questionSessionRow(payload); if (row) openSession(row); };
+    card.appendChild(hint);
+  }
+  if (payload.expiresAt) {
+    const minutes = Math.max(0, Math.round((payload.expiresAt - Date.now()) / 60000));
+    card.appendChild(el("div", "qmeta", `约 ${minutes} 分钟内有效`));
+  }
+
+  const picks = new Map();
+  for (const question of payload.questions || []) {
+    const item = el("div", "qitem");
+    if (question.header) item.appendChild(el("div", "qheader", question.header));
+    item.appendChild(el("div", "qtext", question.question || question.id));
+    if (question.detail) item.appendChild(el("div", "qdetail", question.detail));
+    const options = question.options || [];
+    picks.set(question.id, { selected: new Set(), custom: "", multi: Boolean(question.multiSelect) });
+    if (options.length) {
+      const list = el("div", "qoptions");
+      for (const option of options) {
+        const label = el("label", "qoption");
+        const input = document.createElement("input");
+        input.type = question.multiSelect ? "checkbox" : "radio";
+        input.name = `q-${payload.callId}-${question.id}`;
+        input.onchange = () => {
+          const entry = picks.get(question.id);
+          if (!input.checked) entry.selected.delete(option.label);
+          else if (question.multiSelect) entry.selected.add(option.label);
+          else { entry.selected.clear(); entry.selected.add(option.label); }
+        };
+        const text = el("span", "qoption-text");
+        text.appendChild(el("span", "qoption-label", option.label));
+        if (option.description) text.appendChild(el("span", "qoption-desc", option.description));
+        label.append(input, text);
+        list.appendChild(label);
+      }
+      item.appendChild(list);
+    }
+    const custom = el("input", "qcustom");
+    custom.type = "text";
+    custom.placeholder = options.length ? "其他（可选自由输入）" : "输入你的回答";
+    custom.oninput = () => { picks.get(question.id).custom = custom.value; };
+    item.appendChild(custom);
+    card.appendChild(item);
+  }
+
+  const row = el("div", "qrow");
+  const submit = el("button", "btn", "提交回答");
+  submit.onclick = () => answerQuestion(payload, picks, submit);
+  row.appendChild(submit);
+  card.appendChild(row);
+  return card;
+}
+
+async function answerQuestion(payload, picks, button) {
+  const answers = [];
+  for (const question of payload.questions || []) {
+    const entry = picks.get(question.id) || { selected: new Set(), custom: "" };
+    const selected = [...entry.selected];
+    const custom = String(entry.custom || "").trim();
+    if (!selected.length && !custom) {
+      toast("请先选择或填写回答");
+      return;
+    }
+    answers.push({ id: question.id, selected, ...(custom ? { custom } : {}) });
+  }
+  if (String(payload.callId).startsWith("demo-")) {
+    // 演示模式：不发给宿主，只验证选择/提交链路
+    state.questions.delete(questionKeyOf(payload));
+    renderChat({ keepScroll: true });
+    toast("演示：回答已收集（未发送到宿主）");
+    return;
+  }
+  button.disabled = true;
+  try {
+    await api("question.answer", { sessionId: payload.sessionId, callId: payload.callId, answers });
+    state.questions.delete(questionKeyOf(payload));
+    renderChat({ keepScroll: true });
+    toast("已提交回答");
+  } catch (error) {
+    button.disabled = false;
+    toast("提交失败：" + error.message);
+  }
+}
+
+async function refreshQuestions() {
+  const caps = state.hello?.capabilities || [];
+  if (!caps.includes("questions.list.v1")) return;
+  try {
+    const res = await api("question.list", {});
+    if (!res?.complete) return;
+    state.questions.clear();
+    for (const entry of res.questions || []) {
+      const payload = entry?.payload ?? entry;
+      if (payload?.sessionId && payload?.callId && (payload.state ?? "open") === "open") {
+        state.questions.set(questionKeyOf(payload), payload);
+      }
+    }
+    renderChat({ keepScroll: true });
+  } catch {}
 }
 
 function renderChat({ keepScroll = false } = {}) {
@@ -820,7 +1119,8 @@ function renderChat({ keepScroll = false } = {}) {
   const nearBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 160;
   chat.innerHTML = "";
   const hasApprovals = state.approvals.size > 0;
-  if (!state.items.length && !hasApprovals) {
+  const hasQuestions = state.questions.size > 0;
+  if (!state.items.length && !hasApprovals && !hasQuestions) {
     const empty = el("div", "empty");
     empty.innerHTML = state.current
       ? "还没有消息。发一条试试。"
@@ -831,6 +1131,7 @@ function renderChat({ keepScroll = false } = {}) {
   for (const item of state.items) {
     chat.appendChild(renderItem(item));
   }
+  for (const payload of state.questions.values()) chat.appendChild(renderQuestion(payload));
   for (const payload of state.approvals.values()) chat.appendChild(renderApproval(payload));
   if (keepScroll || nearBottom) chat.scrollTop = chat.scrollHeight;
 }
@@ -1204,6 +1505,7 @@ async function afterConnected(connected, { deviceId }) {
   state.intentionalStop = false;
   await refreshSessions();
   ensureWorkspaces();
+  await refreshQuestions();
   if (!state.current) openDrawer();
   // QA 演示模式：?demo=approval|new|actions|model|effort —— 仅用于验证界面渲染
   const demo = new URLSearchParams(location.search).get("demo");
@@ -1220,6 +1522,34 @@ async function afterConnected(connected, { deviceId }) {
             },
           });
           toast("演示审批卡片已注入");
+          return;
+        }
+        if (demo === "question") {
+          handleEvent({
+            m: "question.request",
+            p: {
+              sessionId: state.current?.id || state.sessions[0]?.id || "demo",
+              callId: "demo-question-1",
+              state: "open",
+              questions: [
+                { id: "q1", header: "部署方式", question: "这个客户端用哪种方式部署？", options: [
+                  { label: "GitHub Pages", description: "免费 HTTPS，已部署" },
+                  { label: "Cloudflare Pages", description: "拖拽即可发布" },
+                  { label: "本地 file://", description: "离线可用" },
+                ] },
+                { id: "q2", header: "附加项", question: "需要绑自定义域名吗？（可多选）", multiSelect: true, options: [
+                  { label: "需要" }, { label: "不需要" },
+                ] },
+              ],
+            },
+          });
+          toast("演示问题卡片已注入");
+          return;
+        }
+        if (demo === "markdown") {
+          state.items.push({ kind: "agent", time: Date.now(), text: MARKDOWN_DEMO });
+          renderChat();
+          toast("Markdown 演示已注入");
           return;
         }
         const row = state.current || state.sessions[0];
@@ -1267,6 +1597,18 @@ function handleEvent({ m, p }) {
     if (["text", "reasoning", "tool-call", "tool-result"].includes(p.kind)) state.running = true;
     appendDelta(p);
     updateComposer();
+    renderChat({ keepScroll: true });
+    return;
+  }
+  if (m === "question.request") {
+    if (!p?.callId) return;
+    const key = questionKeyOf(p);
+    if (p.state && p.state !== "open") {
+      state.questions.delete(key);
+    } else {
+      state.questions.set(key, p);
+      if (state.current?.id !== p.sessionId) toast(`有新问题需要回答：${questionSessionLabel(p)}`);
+    }
     renderChat({ keepScroll: true });
     return;
   }
@@ -1370,6 +1712,7 @@ async function sessionAction(act, row) {
         state.current = null;
         state.items = [];
         state.approvals.clear();
+        state.questions.clear();
         $("sessionTitle").textContent = "选择会话";
         $("sessionMeta").textContent = "—";
         renderChat();
