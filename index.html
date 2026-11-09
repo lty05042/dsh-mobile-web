@@ -1,0 +1,1793 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, interactive-widget=resizes-content" />
+<meta name="theme-color" content="#0b0f16" />
+<meta name="referrer" content="no-referrer" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; form-action 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws: wss:; font-src 'self' data:" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<title>DSH 手机端</title>
+<style>
+  :root{
+    --bg:#0b0f16; --bg-2:#111826; --bg-3:#17202f; --line:#233044;
+    --fg:#e8eef7; --fg-dim:#93a4bb; --fg-faint:#64758d;
+    --accent:#4f9dff; --accent-2:#7c5cff; --ok:#34d399; --warn:#fbbf24; --err:#f87171;
+    --user-bg:#1e3a5f; --radius:14px;
+    --safe-b:env(safe-area-inset-bottom,0px);
+    --safe-t:env(safe-area-inset-top,0px);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;margin:0}
+  body{
+    background:var(--bg); color:var(--fg); overflow:hidden;
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  button,input,textarea{font:inherit;color:inherit}
+  button{background:none;border:0;padding:0;cursor:pointer}
+  .hidden{display:none!important}
+  .screen{position:fixed;inset:0;display:flex;flex-direction:column}
+
+  /* ---------- connect screen ---------- */
+  #connect{background:radial-gradient(120% 80% at 50% 0%,#152238 0%,var(--bg) 60%);overflow:auto}
+  .connect-inner{max-width:560px;width:100%;margin:auto;padding:calc(28px + var(--safe-t)) 20px calc(28px + var(--safe-b))}
+  .logo{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+  .logo-mark{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--accent-2));display:grid;place-items:center;font-weight:700;font-size:18px;color:#fff}
+  .logo h1{font-size:20px;margin:0}
+  .logo p{margin:2px 0 0;color:var(--fg-dim);font-size:13px}
+  .card{background:var(--bg-2);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-top:16px}
+  .card h2{font-size:14px;margin:0 0 10px;color:var(--fg-dim);font-weight:600;letter-spacing:.02em}
+  label{display:block;font-size:13px;color:var(--fg-dim);margin:12px 0 6px}
+  textarea,input[type=text],input[type=password]{
+    width:100%;background:var(--bg-3);border:1px solid var(--line);border-radius:10px;
+    padding:11px 12px;outline:none;resize:vertical;font-size:14px;color:var(--fg)
+  }
+  textarea:focus,input:focus{border-color:var(--accent)}
+  textarea{min-height:84px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.5}
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    background:linear-gradient(135deg,var(--accent),#3b7fe0);color:#fff;border-radius:11px;
+    padding:12px 16px;font-weight:600;width:100%;margin-top:16px
+  }
+  .btn:disabled{opacity:.55}
+  .btn.ghost{background:var(--bg-3);border:1px solid var(--line);color:var(--fg)}
+  .btn.danger{background:transparent;border:1px solid #5b2a2a;color:var(--err)}
+  .hint{color:var(--fg-faint);font-size:12.5px;margin-top:10px;line-height:1.6}
+  .hint code{background:var(--bg-3);padding:1px 5px;border-radius:5px;font-size:12px}
+  .steps{margin:0;padding-left:18px;color:var(--fg-dim);font-size:13px;line-height:1.8}
+  .status-row{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;color:var(--fg-dim);min-height:20px}
+  .spinner{width:14px;height:14px;border:2px solid rgba(255,255,255,.25);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* ---------- main ---------- */
+  #main{background:var(--bg)}
+  .topbar{
+    display:flex;align-items:center;gap:10px;padding:calc(8px + var(--safe-t)) 12px 8px;
+    background:rgba(11,15,22,.92);border-bottom:1px solid var(--line);backdrop-filter:blur(12px);z-index:20
+  }
+  .icon-btn{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;color:var(--fg-dim);flex:0 0 auto}
+  .icon-btn:active{background:var(--bg-3)}
+  .icon-btn svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+  .title-wrap{flex:1;min-width:0}
+  .title-wrap .t1{font-weight:600;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .title-wrap .t2{font-size:11.5px;color:var(--fg-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--fg-faint);flex:0 0 auto}
+  .dot.on{background:var(--ok);box-shadow:0 0 8px rgba(52,211,153,.7)}
+  .dot.wait{background:var(--warn);animation:pulse 1.4s ease-in-out infinite}
+  @keyframes pulse{50%{opacity:.35}}
+
+  #banner{
+    display:none;padding:8px 14px;font-size:12.5px;background:#3a2a12;color:var(--warn);
+    border-bottom:1px solid #5c441c
+  }
+  #banner.show{display:block}
+
+  #chat{flex:1;overflow-y:auto;overscroll-behavior:contain;padding:14px 12px 8px;scroll-behavior:smooth}
+  .empty{color:var(--fg-faint);text-align:center;padding:60px 24px;font-size:14px;line-height:1.8}
+  .msg{margin:0 0 14px;display:flex;flex-direction:column;max-width:100%}
+  .msg .who{font-size:11px;color:var(--fg-faint);margin:0 4px 4px;display:flex;gap:8px;align-items:center}
+  .bubble{
+    border-radius:var(--radius);padding:10px 13px;font-size:14.5px;line-height:1.62;
+    white-space:pre-wrap;word-break:break-word;border:1px solid transparent
+  }
+  .msg.user{align-items:flex-end}
+  .msg.user .bubble{background:var(--user-bg);border-color:#2b4d78;border-bottom-right-radius:5px}
+  .msg.agent .bubble{background:var(--bg-2);border-color:var(--line);border-bottom-left-radius:5px}
+  .msg.agent.streaming .bubble{border-color:#2f4a73}
+  .bubble pre{background:#0a0e15;border:1px solid var(--line);border-radius:9px;padding:10px;overflow-x:auto;margin:8px 0 0;font-size:12.5px}
+  .bubble code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.8px;background:#0a0e15;padding:1px 5px;border-radius:5px}
+  .bubble pre code{background:none;padding:0}
+  details.think{margin:0 0 6px;font-size:12.5px;color:var(--fg-faint)}
+  details.think summary{cursor:pointer;user-select:none}
+  details.think .body{white-space:pre-wrap;margin-top:6px;padding-left:8px;border-left:2px solid var(--line)}
+
+  .tool{
+    margin:0 0 12px;background:var(--bg-2);border:1px solid var(--line);border-radius:12px;overflow:hidden
+  }
+  .tool summary{
+    list-style:none;display:flex;align-items:center;gap:9px;padding:10px 12px;cursor:pointer;font-size:13px
+  }
+  .tool summary::-webkit-details-marker{display:none}
+  .tool .tname{font-family:ui-monospace,Menlo,Consolas,monospace;color:#8ec5ff;font-size:12.5px}
+  .tool .tstat{font-size:11px;padding:1px 7px;border-radius:20px;background:var(--bg-3);color:var(--fg-faint)}
+  .tool .tstat.err{background:#3a1c1c;color:var(--err)}
+  .tool .tstat.ok{background:#12301f;color:var(--ok)}
+  .tool .tbody{padding:0 12px 12px}
+  .tool .tbody pre{background:#0a0e15;border:1px solid var(--line);border-radius:9px;padding:10px;overflow-x:auto;font-size:12px;margin:0 0 8px}
+
+  .approval{
+    margin:0 0 12px;border:1px solid #5c441c;background:#2a2110;border-radius:12px;padding:12px
+  }
+  .approval .atitle{font-size:13px;color:var(--warn);margin-bottom:6px;font-weight:600}
+  .approval .adesc{font-size:13.5px;margin-bottom:10px;white-space:pre-wrap}
+  .approval .row{display:flex;gap:8px}
+  .approval .row .btn{margin:0;padding:9px 12px;font-size:13.5px}
+
+  .sys-note{text-align:center;color:var(--fg-faint);font-size:11.5px;margin:4px 0 14px}
+
+  #composer{
+    padding:8px 10px calc(8px + var(--safe-b));border-top:1px solid var(--line);
+    background:rgba(11,15,22,.96);backdrop-filter:blur(12px)
+  }
+  .composer-row{display:flex;align-items:flex-end;gap:8px}
+  #input{
+    flex:1;background:var(--bg-2);border:1px solid var(--line);border-radius:18px;
+    padding:10px 14px;font-size:15px;resize:none;max-height:132px;min-height:42px;outline:none;line-height:1.5
+  }
+  #input:focus{border-color:var(--accent)}
+  #send{
+    width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#3b7fe0);
+    display:grid;place-items:center;flex:0 0 auto
+  }
+  #send:disabled{opacity:.45}
+  #send svg{width:20px;height:20px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  #stop{
+    width:42px;height:42px;border-radius:50%;background:#7f1d1d;display:grid;place-items:center;flex:0 0 auto
+  }
+  #stop svg{width:16px;height:16px;fill:#fff}
+  .composer-meta{display:flex;justify-content:space-between;font-size:11px;color:var(--fg-faint);padding:6px 6px 0}
+
+  /* ---------- drawer ---------- */
+  #scrim{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:40;opacity:0;transition:opacity .2s;pointer-events:none}
+  #scrim.show{opacity:1;pointer-events:auto}
+  #drawer{
+    position:fixed;top:0;left:0;bottom:0;width:86%;max-width:340px;z-index:50;
+    background:var(--bg-2);border-right:1px solid var(--line);display:flex;flex-direction:column;
+    transform:translateX(-102%);transition:transform .22s cubic-bezier(.2,.8,.2,1);
+    padding-top:var(--safe-t);padding-bottom:var(--safe-b)
+  }
+  #drawer.show{transform:none}
+  .drawer-head{padding:14px 14px 10px;border-bottom:1px solid var(--line)}
+  .drawer-head .row{display:flex;align-items:center;gap:8px}
+  .drawer-head h2{font-size:15px;margin:0;flex:1}
+  .search{margin-top:10px;display:flex;gap:8px}
+  .search input{flex:1;background:var(--bg-3);border:1px solid var(--line);border-radius:9px;padding:8px 11px;font-size:13px;outline:none}
+  #sessions{flex:1;overflow-y:auto;padding:6px 8px}
+  .sess{
+    display:block;width:100%;text-align:left;padding:10px 10px;border-radius:10px;margin-bottom:2px
+  }
+  .sess:active{background:var(--bg-3)}
+  .sess.cur{background:#15263c}
+  .sess .l1{display:flex;align-items:center;gap:7px}
+  .sess .st{font-size:13.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+  .sess .l2{font-size:11px;color:var(--fg-faint);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:rtl;text-align:left}
+  .sess .badge{font-size:10.5px;padding:1px 6px;border-radius:20px;background:#12301f;color:var(--ok);flex:0 0 auto}
+  .sess .badge.blank{background:var(--bg-3);color:var(--fg-faint)}
+  .drawer-foot{padding:10px 14px;border-top:1px solid var(--line);display:flex;gap:8px}
+  .drawer-foot .btn{margin:0;padding:10px;font-size:13.5px}
+
+  /* ---------- sheet ---------- */
+  #sheet-wrap{position:fixed;inset:0;z-index:60;display:none}
+  #sheet-wrap.show{display:block}
+  #sheet{position:absolute;left:0;right:0;bottom:0;background:var(--bg-2);border-top:1px solid var(--line);
+    border-radius:18px 18px 0 0;padding:18px 18px calc(18px + var(--safe-b));max-height:80%;overflow:auto}
+  #sheet h2{margin:0 0 14px;font-size:16px}
+  .kv{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px}
+  .kv span:first-child{color:var(--fg-dim);flex:0 0 auto}
+  .kv span:last-child{text-align:right;word-break:break-all;color:var(--fg)}
+  #toast{
+    position:fixed;left:50%;bottom:calc(84px + var(--safe-b));transform:translateX(-50%) translateY(20px);
+    background:#1f2a3b;border:1px solid var(--line);color:var(--fg);padding:9px 16px;border-radius:22px;
+    font-size:13px;z-index:80;opacity:0;pointer-events:none;transition:.22s;max-width:86%;text-align:center
+  }
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  /* ---------- v2: session actions / generic sheet ---------- */
+  .sess{position:relative;display:flex;align-items:center;gap:6px;width:100%;text-align:left;
+    padding:10px 8px 10px 10px;border-radius:10px;margin-bottom:2px}
+  .sess .sess-main{flex:1;min-width:0}
+  .sess-more{width:30px;height:30px;flex:0 0 auto;display:grid;place-items:center;border-radius:8px;
+    color:var(--fg-faint);font-size:17px;line-height:1}
+  .sess-more:active{background:var(--bg-3);color:var(--fg)}
+  .sess .l1{display:flex;align-items:center;gap:7px}
+  .sess .st{font-size:13.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+  .sess .l2{font-size:11px;color:var(--fg-faint);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sess .badge{font-size:10.5px;padding:1px 6px;border-radius:20px;background:#12301f;color:var(--ok);flex:0 0 auto}
+  .sess .badge.blank{background:var(--bg-3);color:var(--fg-faint)}
+
+  #sheet2-wrap{position:fixed;inset:0;z-index:65;display:none}
+  #sheet2-wrap.show{display:block}
+  #sheet2{position:absolute;left:0;right:0;bottom:0;background:var(--bg-2);border-top:1px solid var(--line);
+    border-radius:18px 18px 0 0;padding:18px 18px calc(18px + var(--safe-b));max-height:82%;overflow:auto}
+  #sheet2 h2{margin:0 0 14px;font-size:16px}
+  .slist{display:flex;flex-direction:column;gap:2px}
+  .sitem{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:12px 10px;border-radius:10px}
+  .sitem:active{background:var(--bg-3)}
+  .sitem.active{background:#15263c}
+  .sitem .sitem-l{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+  .sitem .sitem-t{font-size:14px}
+  .sitem .sitem-sub{font-size:11.5px;color:var(--fg-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sitem .sitem-tag{font-size:11px;color:var(--fg-faint);flex:0 0 auto;padding:2px 8px;border-radius:20px;background:var(--bg-3)}
+  .sect{font-size:12px;color:var(--fg-dim);margin:16px 0 6px;font-weight:600}
+  #sheet2 .field{margin-bottom:12px}
+  #sheet2 .field label{margin:0 0 6px}
+  .sel{width:100%;background:var(--bg-3);border:1px solid var(--line);border-radius:10px;padding:11px 12px;
+    outline:none;font-size:14px;color:var(--fg);appearance:none}
+  .field-input{width:100%;background:var(--bg-3);border:1px solid var(--line);border-radius:10px;
+    padding:11px 12px;outline:none;font-size:14px;color:var(--fg)}
+
+  /* ---------- v2: composer / security ---------- */
+  #btnCmd{
+    width:42px;height:42px;border-radius:50%;background:var(--bg-2);border:1px solid var(--line);
+    display:grid;place-items:center;flex:0 0 auto;color:var(--fg-dim);font-size:19px;font-weight:600
+  }
+  #btnCmd:active{background:var(--bg-3);color:var(--fg)}
+  .sec-badge{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:2px 9px;border-radius:20px}
+  .sec-badge.ok{background:#12301f;color:var(--ok)}
+  .sec-badge.warn{background:#3a2a12;color:var(--warn)}
+  .sec-badge.bad{background:#3a1c1c;color:var(--err)}
+  .empty-list{padding:36px 18px}
+
+  /* ========================================================= v3: 竖屏适配 ==
+     窄屏（手机竖屏）专用：更大的触控目标、键盘避让、代码块/工具卡换行、
+     抽屉与底部面板的安全区处理。桌面宽屏不受影响。 */
+  html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+  button,.sess,.sitem{touch-action:manipulation}
+  @media (max-width:820px) and (orientation:portrait), (max-width:560px){
+    :root{--radius:13px}
+    #main,#connect{bottom:var(--kb,0px)}
+    .topbar{gap:6px;padding:calc(6px + var(--safe-t)) 8px 6px}
+    .icon-btn{width:40px;height:40px;border-radius:11px}
+    .title-wrap .t1{font-size:15px}
+    .title-wrap .t2{font-size:10.5px}
+    #chat{padding:10px 9px 6px}
+    .msg .bubble{font-size:15px;line-height:1.58;padding:9px 12px}
+    .msg .who{font-size:10.5px}
+    .bubble pre{font-size:11.5px;padding:9px}
+    .tool summary{flex-wrap:wrap;gap:6px 8px}
+    .tool .tname{font-size:12px}
+    .tool .tbody pre{font-size:11px}
+    details.think .body{padding-left:6px}
+
+    #composer{padding:6px 8px calc(6px + var(--safe-b))}
+    .composer-row{gap:6px}
+    #input{font-size:16px;min-height:44px;padding:11px 13px;border-radius:20px}
+    #send,#stop,#btnCmd{width:44px;height:44px}
+    #btnCmd{font-size:21px}
+    .composer-meta{padding:5px 8px 0;font-size:10.5px}
+
+    #drawer{width:92%;max-width:380px}
+    .drawer-head{padding:12px 12px 8px}
+    #sessions{padding:6px 6px}
+    .sess{padding:12px 8px 12px 10px;min-height:56px;margin-bottom:4px}
+    .sess .st{font-size:14.5px}
+    .sess .l2{font-size:11.5px}
+    .sess-more{width:36px;height:36px;font-size:19px}
+    .drawer-foot{padding:8px 12px calc(8px + var(--safe-b))}
+
+    #sheet,#sheet2{padding:16px 15px calc(16px + var(--safe-b))}
+    #sheet2{max-height:88%}
+    #sheet h2,#sheet2 h2{font-size:17px}
+    .sitem{padding:14px 12px;min-height:52px}
+    .sitem .sitem-t{font-size:15px}
+    .sitem .sitem-sub{font-size:12px;white-space:normal;line-height:1.45}
+    .kv{padding:11px 0;font-size:13.5px;gap:10px}
+    .kv span:last-child{max-width:62%}
+    .field-input,.sel{font-size:16px;padding:13px 12px}
+    #toast{bottom:calc(92px + var(--safe-b) + var(--kb,0px));font-size:13.5px;max-width:92%}
+  }
+  /* 极窄屏（≤380px）：进一步压缩 */
+  @media (max-width:380px){
+    .topbar{gap:4px}
+    .icon-btn{width:38px;height:38px}
+    .title-wrap .t1{font-size:14px}
+    .msg .bubble{font-size:14.5px}
+    .sess .st{font-size:14px}
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ connect ============ -->
+<div class="screen" id="connect">
+  <div class="connect-inner">
+    <div class="logo">
+      <div class="logo-mark">DS</div>
+      <div>
+        <h1>DSH 手机端</h1>
+        <p>通过协议 v1 直连你的 DeepSeek Harness</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>连接</h2>
+      <label for="pairUrl">配对链接（含一次性 token）</label>
+      <textarea id="pairUrl" placeholder="wss://xxxx.dsh-market.com/ios/v1?token=..."
+        autocapitalize="off" autocorrect="off" spellcheck="false"></textarea>
+      <div class="hint">在电脑的 DSH 界面里打开侧栏底部的二维码 → 扫码后复制二维码中的链接文本；或用项目里的 <code>tools/pair.ps1</code> 直接打印。</div>
+      <label for="serverUrl">或手动指定服务器地址（已配对时）</label>
+      <input id="serverUrl" type="text" placeholder="wss://xxxx.dsh-market.com" autocapitalize="off" autocorrect="off" spellcheck="false" />
+      <button class="btn" id="btnConnect">连接</button>
+      <button class="btn ghost hidden" id="btnReconnectSaved">用已保存的设备重连</button>
+      <div class="status-row"><span id="connectDot" class="dot"></span><span id="connectStatus">未连接</span></div>
+    </div>
+
+    <div class="card">
+      <h2>没有配对链接？</h2>
+      <ol class="steps">
+        <li>在电脑上打开 DSH，展开侧栏，点底部的二维码图标（aria-label「配对 iPhone」）</li>
+        <li>手机上用相机扫这个二维码</li>
+        <li>把二维码里的链接文本粘贴到上面的输入框</li>
+        <li>点「连接」——配对一次后会自动记住设备令牌</li>
+      </ol>
+      <div class="hint">令牌 30 秒有效且一次性；过期就在电脑面板里点「重新取码」。</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ main ============ -->
+<div class="screen hidden" id="main">
+  <div class="topbar">
+    <button class="icon-btn" id="btnMenu" aria-label="会话列表">
+      <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+    </button>
+    <div class="title-wrap">
+      <div class="t1" id="sessionTitle">选择会话</div>
+      <div class="t2" id="sessionMeta">—</div>
+    </div>
+    <span class="dot" id="connDot" title="连接状态"></span>
+    <button class="icon-btn" id="btnMore" aria-label="设置">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+    </button>
+  </div>
+  <div id="banner"></div>
+  <div id="chat"></div>
+  <div id="composer">
+    <div class="composer-row">
+      <button id="btnCmd" aria-label="指令与技能">/</button>
+      <textarea id="input" rows="1" placeholder="发消息…" enterkeyhint="send"></textarea>
+      <button id="stop" class="hidden" aria-label="停止"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button>
+      <button id="send" aria-label="发送"><svg viewBox="0 0 24 24"><path d="M4 12l16-8-6 8 6 8-16-8z"/></svg></button>
+    </div>
+    <div class="composer-meta"><span id="usageHint"></span><span id="turnHint"></span></div>
+  </div>
+</div>
+
+<div id="scrim"></div>
+
+<!-- ============ sessions drawer ============ -->
+<aside id="drawer">
+  <div class="drawer-head">
+    <div class="row">
+      <h2>会话</h2>
+      <button class="icon-btn" id="btnNewSession" aria-label="新建会话">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+      <button class="icon-btn" id="btnRefresh" aria-label="刷新">
+        <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/></svg>
+      </button>
+      <button class="icon-btn" id="btnCloseDrawer" aria-label="关闭">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="search"><input id="search" type="text" placeholder="搜索标题 / 目录" /></div>
+  </div>
+  <div id="sessions"></div>
+  <div class="drawer-foot">
+    <button class="btn ghost" id="btnSettings">设置</button>
+    <button class="btn ghost" id="btnReload">重新加载</button>
+  </div>
+</aside>
+
+<!-- ============ settings sheet ============ -->
+<div id="sheet-wrap">
+  <div id="sheet">
+    <h2>设置</h2>
+    <div class="kv"><span>设备</span><span id="setDevice">—</span></div>
+    <div class="kv"><span>服务器</span><span id="setServer">—</span></div>
+    <div class="kv"><span>传输安全</span><span id="setSecure">—</span></div>
+    <div class="kv"><span>协议</span><span id="setProto">—</span></div>
+    <div class="kv"><span>能力</span><span id="setCaps">—</span></div>
+    <div class="kv"><span>模型</span><span id="setModel">—</span></div>
+    <div class="kv"><span>推理强度</span><span id="setEffort">—</span></div>
+    <div class="kv"><span>权限模式</span><span id="setPerm">—</span></div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:16px">
+      <button class="btn ghost" id="btnRePair">重新配对</button>
+      <button class="btn ghost" id="btnDisconnect">断开连接</button>
+      <button class="btn ghost" id="btnClear">清除本地凭据</button>
+      <button class="btn danger" id="btnCloseSheet">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ generic action sheet (v2) ============ -->
+<div id="sheet2-wrap">
+  <div id="sheet2"></div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+/* =========================================================================
+ *  DSH protocol v1 手机客户端
+ *  单文件、零依赖；协议常量与形状取自 @linxin666/dsh-remote-bridge 0.4.16
+ * ========================================================================= */
+
+const LS = {
+  server: "dshm.server",
+  token: "dshm.token",
+  deviceId: "dshm.deviceId",
+  caps: "dshm.caps",
+};
+
+const CAPS = [
+  "session.snapshot.trim.v1",
+  "session.snapshot.since.v1",
+  "delta.v1",
+  "approvals.v1",
+  "commands.v1",
+  "session.list.compact.v1",
+  "usage.v1",
+  "usage.stats.v1",
+  "session.admin.v1",
+  "session.fork.v1",
+  "workspace.v1",
+  "agents.v1",
+];
+
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  if (text !== undefined) node.textContent = text;
+  return node;
+};
+const nowTime = () => new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+
+function toast(message) {
+  const t = $("toast");
+  t.textContent = message;
+  t.classList.add("show");
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => t.classList.remove("show"), 2200);
+}
+
+/* ---------------------------------------------------------------- crypto -- */
+const b64uToBytes = (text) => {
+  const norm = String(text).replace(/-/g, "+").replace(/_/g, "/");
+  const pad = norm + "=".repeat((4 - (norm.length % 4)) % 4);
+  const bin = atob(pad);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+};
+const bytesToB64u = (bytes) => {
+  let bin = "";
+  const arr = new Uint8Array(bytes);
+  for (let i = 0; i < arr.length; i++) bin += String.fromCharCode(arr[i]);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+};
+
+/* ---------------------------------------------------------------- protocol */
+class Protocol {
+  constructor({ url, onFrame, onStatus }) {
+    this.url = url;
+    this.onFrame = onFrame;
+    this.onStatus = onStatus;
+    this.ws = null;
+    this.nextId = 1;
+    this.pending = new Map();
+    this.closedByUs = false;
+    this.hello = null;
+  }
+
+  open() {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const ws = new WebSocket(this.url);
+      this.ws = ws;
+      const timer = setTimeout(() => {
+        if (!settled) { settled = true; try { ws.close(); } catch {} reject(new Error("连接超时")); }
+      }, 12000);
+      ws.addEventListener("open", () => {
+        clearTimeout(timer);
+        if (settled) return;
+        settled = true;
+        this.onStatus?.("open");
+        resolve();
+      });
+      ws.addEventListener("error", () => {
+        if (!settled) { settled = true; clearTimeout(timer); reject(new Error("WebSocket 连接失败")); }
+      });
+      ws.addEventListener("message", (ev) => this.#onData(ev.data));
+      ws.addEventListener("close", (ev) => {
+        clearTimeout(timer);
+        const wasOpen = settled;
+        settled = true;
+        if (!wasOpen) reject(new Error(`连接被关闭 (${ev.code})`));
+        this.onStatus?.("closed", ev.code);
+        for (const p of this.pending.values()) p.reject(Object.assign(new Error("连接已断开"), { code: "socket-closed" }));
+        this.pending.clear();
+      });
+    });
+  }
+
+  #onData(data) {
+    if (typeof data !== "string") return; // 未声明 frame.deflate.v1，正常不会收到二进制帧
+    let frame;
+    try { frame = JSON.parse(data); } catch { return; }
+    if (frame.t === "ping") { this.#send({ t: "pong", ts: frame.ts }); return; }
+    if (frame.t === "pong") return;
+    if (frame.t === "res") {
+      const waiter = this.pending.get(frame.id);
+      if (!waiter) return;
+      this.pending.delete(frame.id);
+      if (frame.ok) waiter.resolve(frame.r);
+      else waiter.reject(Object.assign(new Error(frame.e?.msg || "请求被拒绝"), { code: frame.e?.code }));
+      return;
+    }
+    if (frame.t === "ev") this.onFrame?.({ seq: frame.seq, m: frame.m, p: frame.p });
+  }
+
+  #send(frame) {
+    if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(frame));
+  }
+
+  call(method, payload = {}, timeoutMs = 45000) {
+    if (!this.ws || this.ws.readyState !== 1) return Promise.reject(new Error("连接未就绪"));
+    const id = this.nextId++;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`${method} 超时`));
+      }, timeoutMs);
+      this.pending.set(id, {
+        resolve: (v) => { clearTimeout(timer); resolve(v); },
+        reject: (e) => { clearTimeout(timer); reject(e); },
+      });
+      this.#send({ t: "req", id, m: method, p: payload });
+    });
+  }
+
+  close() {
+    this.closedByUs = true;
+    try { this.ws?.close(); } catch {}
+  }
+}
+
+/* --------------------------------------------------------------- ws urls -- */
+/** 本机 / 局域网地址（ws:// 明文只在这些网络上允许，用于调试）。 */
+function hostIsLocal(hostname) {
+  const host = String(hostname || "").toLowerCase();
+  return (
+    host === "127.0.0.1" || host === "localhost" || host === "::1" || host === "[::1]" ||
+    /^10\./.test(host) || /^192\.168\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+    host.endsWith(".local") || host.endsWith(".lan")
+  );
+}
+
+/** 服务器地址是否是加密传输（wss）。 */
+const serverIsEncrypted = (server) => String(server || "").startsWith("wss://");
+
+function parsePairInput(raw) {
+  const text = String(raw || "").trim();
+  if (!text) throw new Error("请粘贴配对链接");
+  let url;
+  try { url = new URL(text); } catch { throw new Error("链接格式不正确"); }
+  if (url.protocol !== "wss:" && url.protocol !== "ws:") throw new Error("链接必须是 ws:// 或 wss://");
+  // 安全要求：公网必须加密；ws:// 仅限本机/局域网调试
+  if (url.protocol === "ws:" && !hostIsLocal(url.hostname)) {
+    throw new Error("公网地址必须使用 wss://（TLS 加密）。ws:// 只允许本机或局域网调试地址。");
+  }
+  const token = url.searchParams.get("token");
+  if (!token) throw new Error("链接里没有 token 参数");
+  const server = `${url.protocol}//${url.host}`;
+  return { server, token, path: url.pathname || "/ios/v1" };
+}
+
+const dialUrl = (server, token, path = "/ios/v1") =>
+  `${server.replace(/\/+$/, "")}${path}?token=${encodeURIComponent(token)}`;
+
+/* ------------------------------------------------------------------ state */
+const state = {
+  protocol: null,
+  server: "",
+  deviceToken: "",
+  deviceId: "",
+  hello: null,
+  sessions: [],
+  filter: "",
+  current: null,          // session row
+  items: [],              // transcript model
+  streaming: null,        // current streaming agent item
+  running: false,
+  lastSeq: 0,
+  approvals: new Map(),   // id -> payload
+  reconnectAttempt: 0,
+  intentionalStop: false,
+  capsDeclared: [],
+  workspaces: null,       // workspace.list 缓存
+  presets: null,          // presets.list 缓存
+  archivedIds: null,      // workspace.list 返回的已归档 sessionId
+  commandsCache: new Map(), // sessionId -> 指令/技能目录
+};
+
+/* --------------------------------------------------------------- transcript */
+const extractText = (content) => {
+  if (!Array.isArray(content)) return "";
+  return content.filter((b) => b && b.type === "text" && typeof b.text === "string").map((b) => b.text).join("");
+};
+const extractReasoning = (content) => {
+  if (!Array.isArray(content)) return "";
+  return content.filter((b) => b && b.type === "reasoning" && typeof b.text === "string").map((b) => b.text).join("");
+};
+
+function actorKindOf(source, actor) {
+  if (actor && actor.kind) return actor.kind;
+  const kind = source?.kind;
+  if (kind === "user" || kind === "user-approval") return "human";
+  if (kind === "agent-message" || kind === "subagent-settled") return "agent";
+  return "system";
+}
+
+function itemsFromSnapshot(snapshot) {
+  const items = [];
+  const toolByCallId = new Map();
+  for (const turn of snapshot.turns || []) {
+    for (const entry of turn.entries || []) {
+      const data = entry.data || {};
+      if (entry.type === "user/message") {
+        const text = extractText(data.content);
+        const kind = actorKindOf(data.source, entry.actor);
+        if (!text) continue;
+        if (kind === "system") continue; // 运行时上下文/技能目录等注入，不渲染
+        items.push({ kind: "user", text, actor: kind, time: entry.time, id: data.id });
+      } else if (entry.type === "assistant/message") {
+        const content = data.message?.content || [];
+        const text = extractText(content);
+        const reasoning = extractReasoning(content);
+        if (!text && !reasoning) continue;
+        items.push({ kind: "agent", text, reasoning, time: entry.time });
+      } else if (entry.type === "tool/call") {
+        const item = {
+          kind: "tool", callId: data.callId, name: data.name || "tool",
+          args: typeof data.arguments === "string" ? data.arguments : JSON.stringify(data.arguments ?? "", null, 2),
+          output: "", isError: false, done: false, time: entry.time,
+        };
+        toolByCallId.set(item.callId, item);
+        items.push(item);
+      } else if (entry.type === "tool/result") {
+        const callId = data.message?.toolCallId || data.toolCallId;
+        const output = extractText(data.message?.content);
+        const item = toolByCallId.get(callId);
+        if (item) {
+          item.output = output;
+          item.isError = Boolean(data.message?.isError || data.isError);
+          item.done = true;
+        } else {
+          items.push({ kind: "tool", callId, name: "tool", args: "", output, isError: false, done: true, time: entry.time });
+        }
+      } else if (entry.type === "subagent/catalog") {
+        items.push({ kind: "note", text: `子代理：${data.label || data.childId || ""}`, time: entry.time });
+      }
+    }
+  }
+  return items;
+}
+
+function appendDelta(delta) {
+  switch (delta.kind) {
+    case "user-message": {
+      const actor = delta.actor?.kind || "human";
+      if (actor === "system") return;
+      finishStreaming();
+      state.items.push({ kind: "user", text: delta.text || "", actor, time: Date.now(), id: delta.messageId });
+      break;
+    }
+    case "text": {
+      const target = ensureStreaming();
+      target.text += delta.text || "";
+      break;
+    }
+    case "reasoning": {
+      const target = ensureStreaming();
+      target.reasoning = (target.reasoning || "") + (delta.text || "");
+      break;
+    }
+    case "tool-call": {
+      // 工具调用会把 assistant 的文本切成前后两段：先收尾当前气泡，工具卡才能插在中间
+      finishStreaming();
+      state.tools = state.tools || new Map();
+      const existing = state.tools.get(delta.callId);
+      if (existing) {
+        // 同一个 call 的参数是分片流式到达的：累加而不是新建卡片
+        existing.args = (existing.args || "") + (delta.argumentsDelta || "");
+        break;
+      }
+      const item = {
+        kind: "tool", callId: delta.callId, name: delta.name || "tool",
+        args: delta.argumentsDelta || "", output: "", isError: false, done: false, time: Date.now(),
+      };
+      state.tools.set(delta.callId, item);
+      state.items.push(item);
+      break;
+    }
+    case "tool-result": {
+      const tool = state.tools?.get(delta.callId);
+      if (tool) {
+        tool.output = delta.output || "";
+        tool.isError = Boolean(delta.isError);
+        tool.done = true;
+      } else {
+        state.items.push({
+          kind: "tool", callId: delta.callId, name: "tool", args: "",
+          output: delta.output || "", isError: Boolean(delta.isError), done: true, time: Date.now(),
+        });
+      }
+      break;
+    }
+    case "turn-end": {
+      finishStreaming();
+      state.running = false;
+      updateComposer();
+      refreshSessions().catch(() => {});
+      break;
+    }
+    case "usage": {
+      if (delta.usage) {
+        $("usageHint").textContent =
+          `tokens: ${delta.usage.inputTokens ?? "?"}↑ ${delta.usage.outputTokens ?? "?"}↓`;
+      }
+      break;
+    }
+    case "subagent": {
+      state.items.push({ kind: "note", text: `子代理：${delta.label || delta.childId}`, time: Date.now() });
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+function ensureStreaming() {
+  if (!state.streaming) {
+    state.streaming = { kind: "agent", text: "", reasoning: "", time: Date.now(), streaming: true };
+    state.items.push(state.streaming);
+  }
+  return state.streaming;
+}
+function finishStreaming() {
+  if (state.streaming) {
+    state.streaming.streaming = false;
+    if (!state.streaming.text && !state.streaming.reasoning) {
+      const idx = state.items.indexOf(state.streaming);
+      if (idx >= 0) state.items.splice(idx, 1);
+    }
+    state.streaming = null;
+  }
+}
+
+/* ------------------------------------------------------------------ render */
+const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+function renderRich(text) {
+  let out = escapeHtml(text);
+  const blocks = [];
+  out = out.replace(/```([\s\S]*?)```/g, (_, code) => {
+    blocks.push(code.replace(/^\w*\n/, ""));
+    return `\u0000CODE${blocks.length - 1}\u0000`;
+  });
+  out = out.replace(/`([^`\n]+)`/g, "<code>$1</code>");
+  out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  out = out.replace(/\n/g, "<br>");
+  out = out.replace(/\u0000CODE(\d+)\u0000/g, (_, i) => `<pre><code>${blocks[Number(i)]}</code></pre>`);
+  return out;
+}
+
+function renderChat({ keepScroll = false } = {}) {
+  const chat = $("chat");
+  const nearBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 160;
+  chat.innerHTML = "";
+  const hasApprovals = state.approvals.size > 0;
+  if (!state.items.length && !hasApprovals) {
+    const empty = el("div", "empty");
+    empty.innerHTML = state.current
+      ? "还没有消息。发一条试试。"
+      : "从左上角菜单里选一个会话，或新建会话后开始对话。";
+    chat.appendChild(empty);
+    return;
+  }
+  for (const item of state.items) {
+    chat.appendChild(renderItem(item));
+  }
+  for (const payload of state.approvals.values()) chat.appendChild(renderApproval(payload));
+  if (keepScroll || nearBottom) chat.scrollTop = chat.scrollHeight;
+}
+
+function renderItem(item) {
+  if (item.kind === "note") return el("div", "sys-note", item.text);
+
+  if (item.kind === "tool") {
+    const details = el("details", "tool");
+    const summary = el("summary");
+    const name = el("span", "tname", item.name);
+    const stat = el("span", "tstat" + (item.done ? (item.isError ? " err" : " ok") : ""),
+      item.done ? (item.isError ? "失败" : "完成") : "运行中");
+    summary.append(name, stat);
+    details.appendChild(summary);
+    const body = el("div", "tbody");
+    if (item.args) {
+      const pre = el("pre");
+      pre.textContent = prettyMaybeJson(item.args);
+      body.appendChild(pre);
+    }
+    if (item.output) {
+      const pre = el("pre");
+      pre.textContent = item.output.length > 8000 ? item.output.slice(0, 8000) + "\n…(截断)" : item.output;
+      body.appendChild(pre);
+    }
+    details.appendChild(body);
+    return details;
+  }
+
+  const wrap = el("div", "msg " + (item.kind === "user" ? "user" : "agent") + (item.streaming ? " streaming" : ""));
+  const who = el("div", "who");
+  who.textContent = (item.kind === "user" ? (item.actor === "agent" ? "代理" : "我") : "DSH") + " · " + (item.time ? new Date(item.time).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "");
+  wrap.appendChild(who);
+  const bubble = el("div", "bubble");
+
+  if (item.reasoning) {
+    const details = el("details", "think");
+    const summary = el("summary", "", "思考过程");
+    const body = el("div", "body");
+    body.textContent = item.reasoning;
+    details.append(summary, body);
+    bubble.appendChild(details);
+  }
+  const text = el("div");
+  text.innerHTML = renderRich(item.text || "");
+  bubble.appendChild(text);
+  wrap.appendChild(bubble);
+  return wrap;
+}
+
+function prettyMaybeJson(text) {
+  const t = String(text || "").trim();
+  if (!t) return "";
+  if (t.startsWith("{") || t.startsWith("[")) {
+    try { return JSON.stringify(JSON.parse(t), null, 2); } catch {}
+  }
+  return t;
+}
+
+function renderApproval(payload) {
+  const card = el("div", "approval");
+  card.appendChild(el("div", "atitle", "需要授权"));
+  card.appendChild(el("div", "adesc", payload.summary || payload.id || "工具请求"));
+  const row = el("div", "row");
+  const allow = el("button", "btn", "允许一次");
+  allow.onclick = () => resolveApproval(payload.id, "allowed-once");
+  const deny = el("button", "btn ghost", "拒绝");
+  deny.onclick = () => resolveApproval(payload.id, "rejected");
+  row.append(allow, deny);
+  card.appendChild(row);
+  return card;
+}
+
+async function resolveApproval(id, decision) {
+  try {
+    await state.protocol.call("approval.resolve", { id, decision });
+    state.approvals.delete(id);
+    renderChat({ keepScroll: true });
+    toast(decision === "rejected" ? "已拒绝" : "已允许");
+  } catch (error) {
+    toast("作答失败：" + error.message);
+  }
+}
+
+/* ------------------------------------------------------------------- views */
+function showScreen(name) {
+  $("connect").classList.toggle("hidden", name !== "connect");
+  $("main").classList.toggle("hidden", name !== "main");
+}
+
+function setConnState(kind, text) {
+  const dot = $("connDot");
+  dot.className = "dot" + (kind === "on" ? " on" : kind === "wait" ? " wait" : "");
+  const cd = $("connectDot");
+  cd.className = "dot" + (kind === "on" ? " on" : kind === "wait" ? " wait" : "");
+  $("connectStatus").textContent = text;
+  $("banner").classList.toggle("show", kind === "wait" && !$("main").classList.contains("hidden"));
+  $("banner").textContent = kind === "wait" ? text : "";
+}
+
+function updateComposer() {
+  $("send").classList.toggle("hidden", state.running);
+  $("stop").classList.toggle("hidden", !state.running);
+  $("turnHint").textContent = state.running ? "运行中…" : "";
+}
+
+/* --------------------------------------------------------------- sessions */
+function renderSessions() {
+  const box = $("sessions");
+  box.innerHTML = "";
+  const filter = state.filter.trim().toLowerCase();
+  const rows = state.sessions.filter((s) => {
+    if (!filter) return true;
+    const shown = `${s.title || "(未命名会话)"} ${s.cwd || ""} ${s.blank ? "空白" : ""} ${s.agentRunning ? "运行中" : ""}`;
+    return shown.toLowerCase().includes(filter);
+  });
+  rows.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+  if (!rows.length) {
+    box.appendChild(el("div", "empty", filter ? "没有匹配的会话" : "暂无会话"));
+    return;
+  }
+  for (const row of rows) {
+    const item = el("div", "sess" + (state.current?.id === row.id ? " cur" : ""));
+    const main = el("div", "sess-main");
+    const l1 = el("div", "l1");
+    l1.appendChild(el("span", "st", row.title || "(未命名会话)"));
+    if (row.agentRunning) l1.appendChild(el("span", "badge", "运行中"));
+    else if (row.blank) l1.appendChild(el("span", "badge blank", "空白"));
+    main.append(l1, el("div", "l2", row.cwd || row.id));
+    main.onclick = () => openSession(row);
+    const more = el("button", "sess-more", "⋯");
+    more.setAttribute("aria-label", "会话操作");
+    more.onclick = (event) => { event.stopPropagation(); openSessionActions(row); };
+    item.append(main, more);
+    box.appendChild(item);
+  }
+}
+
+async function refreshSessions() {
+  try {
+    const res = await state.protocol.call("session.list", {});
+    state.sessions = res.sessions || [];
+    renderSessions();
+  } catch (error) {
+    toast("会话列表失败：" + error.message);
+  }
+}
+
+async function openSession(row) {
+  closeDrawer();
+  state.current = row;
+  state.items = [];
+  state.streaming = null;
+  state.tools = new Map();
+  state.approvals.clear();
+  state.running = Boolean(row.agentRunning);
+  $("sessionTitle").textContent = row.title || "(未命名会话)";
+  $("sessionMeta").textContent = row.cwd || row.id;
+  updateComposer();
+  renderChat();
+  try {
+    const snap = await state.protocol.call("session.snapshot", { sessionId: row.id });
+    state.items = itemsFromSnapshot(snap);
+    state.lastSeq = snap.lastSeq ?? 0;
+    renderChat();
+  } catch (error) {
+    toast("打开会话失败：" + error.message);
+  }
+  try { await refreshSessions(); } catch {}
+}
+
+/* ---------------------------------------------------------------- send/stop */
+async function sendMessage() {
+  const input = $("input");
+  const text = input.value.trim();
+  if (!text || !state.current) return;
+  input.value = "";
+  input.style.height = "auto";
+  state.running = true;
+  updateComposer();
+  try {
+    await state.protocol.call("session.prompt", {
+      sessionId: state.current.id,
+      text,
+      requestId: `m-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    });
+  } catch (error) {
+    state.running = false;
+    updateComposer();
+    toast("发送失败：" + error.message);
+  }
+}
+
+async function stopTurn() {
+  if (!state.current) return;
+  try { await state.protocol.call("session.interrupt", { sessionId: state.current.id }); }
+  catch (error) { toast("停止失败：" + error.message); }
+}
+
+/* ------------------------------------------------------------- connection */
+async function connectWithToken(server, token, tokenIsBootstrap) {
+  const proto = new Protocol({
+    url: dialUrl(server, token),
+    onFrame: handleEvent,
+    onStatus: (kind, code) => {
+      if (kind === "open") setConnState("on", "已连接");
+      else if (!state.intentionalStop) setConnState("wait", `连接断开 (${code})，正在重连…`);
+    },
+  });
+  state.protocol = proto;
+  setConnState("wait", tokenIsBootstrap ? "正在配对…" : "正在连接…");
+  await proto.open();
+  const hello = await proto.call("hello", { proto: 1, minor: 21, client: "dshm-web/1.0", cap: CAPS });
+  state.hello = hello;
+  state.server = server;
+  state.capsDeclared = CAPS;
+  if (hello.auth !== "paired") {
+    if (!tokenIsBootstrap) throw new Error("设备令牌已失效，请重新配对");
+    return { needsPairing: true, proto, hello };
+  }
+  return { needsPairing: false, proto, hello };
+}
+
+async function pairAndConnect(pairRaw) {
+  if (!globalThis.crypto?.subtle) {
+    throw new Error("当前页面不是安全上下文，浏览器禁止生成配对密钥。请用 HTTPS 站点，或把本文件存到手机本地用 file:// 打开。");
+  }
+  const { server, token } = parsePairInput(pairRaw);
+  let opened;
+  try {
+    opened = await connectWithToken(server, token, true);
+    if (!opened.needsPairing) {
+      // 这个 token 本来就是设备令牌（用户直接贴了设备 token 的情形）
+      await afterConnected(opened, { deviceId: "" });
+      return;
+    }
+    setConnState("wait", "正在生成设备密钥…");
+    const keyPair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+    const spki = await crypto.subtle.exportKey("spki", keyPair.publicKey);
+    const devicePubKey = bytesToB64u(spki);
+
+    setConnState("wait", "正在配对…");
+    const begin = await opened.proto.call("pair.begin", { token });
+    const nonceBytes = b64uToBytes(begin.nonce);
+    const signatureRaw = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, keyPair.privateKey, nonceBytes);
+    const signature = bytesToB64u(signatureRaw);
+    const finish = await opened.proto.call("pair.finish", { devicePubKey, signature });
+
+    localStorage.setItem(LS.server, server);
+    localStorage.setItem(LS.token, finish.deviceToken);
+    localStorage.setItem(LS.deviceId, finish.deviceId);
+    opened.proto.close();
+
+    const connected = await connectWithToken(server, finish.deviceToken, false);
+    await afterConnected(connected, { deviceId: finish.deviceId });
+  } catch (error) {
+    try { opened?.proto?.close(); } catch {}
+    throw error;
+  }
+}
+
+async function afterConnected(connected, { deviceId }) {
+  state.deviceToken = localStorage.getItem(LS.token) || "";
+  state.deviceId = deviceId || localStorage.getItem(LS.deviceId) || "";
+  setConnState("on", "已连接");
+  showScreen("main");
+  $("setDevice").textContent = state.deviceId || "（已配对）";
+  $("setServer").textContent = state.server;
+  $("setProto").textContent = `v1 / minor ${connected.hello.minor ?? "?"}${connected.hello.relay?.origin ? " · relay" : ""}`;
+  $("setCaps").textContent = `${(connected.hello.capabilities || []).length} 项`;
+  renderSecurityRow();
+  // 重新连接后清掉工作区/预设/指令缓存，避免跨宿主串数据
+  state.workspaces = null;
+  state.presets = null;
+  state.commandsCache.clear();
+  state.reconnectAttempt = 0;
+  state.intentionalStop = false;
+  await refreshSessions();
+  if (!state.current) openDrawer();
+  // QA 演示模式：?demo=approval|new|actions|model|effort —— 仅用于验证界面渲染
+  const demo = new URLSearchParams(location.search).get("demo");
+  if (demo) {
+    setTimeout(async () => {
+      try {
+        if (demo === "approval") {
+          handleEvent({
+            m: "approval.request",
+            p: {
+              id: "demo-approval-1",
+              sessionId: state.current?.id || "demo",
+              summary: "演示卡片：win_bash 请求执行 echo demo（仅用于验证界面渲染）",
+            },
+          });
+          toast("演示审批卡片已注入");
+          return;
+        }
+        const row = state.current || state.sessions[0];
+        if (demo === "new") return openNewSession(row);
+        if (!row) return toast("演示模式需要至少一个会话");
+        if (demo === "chat") return openSession(row);
+        if (demo === "actions") return openSessionActions(row);
+        if (demo === "model") return openModelSheet(row);
+        if (demo === "effort") return openEffortSheetForSession(row);
+      } catch (error) {
+        toast("演示模式出错：" + error.message);
+      }
+    }, 600);
+  }
+}
+
+/* --------------------------------------------------------------- reconnect */
+let reconnectTimer = null;
+function scheduleReconnect() {
+  if (state.intentionalStop || !state.deviceToken) return;
+  clearTimeout(reconnectTimer);
+  const delay = Math.min(30000, 1000 * Math.pow(2, state.reconnectAttempt++));
+  reconnectTimer = setTimeout(async () => {
+    try {
+      const connected = await connectWithToken(state.server, state.deviceToken, false);
+      await afterConnected(connected, { deviceId: state.deviceId });
+      toast("已重连");
+      if (state.current) await openSession(state.current);
+    } catch (error) {
+      if (String(error.message).includes("失效")) {
+        showScreen("connect");
+        setConnState("", "设备令牌失效，请重新配对");
+        return;
+      }
+      scheduleReconnect();
+    }
+  }, delay);
+}
+
+/* ------------------------------------------------------------------ events */
+function handleEvent({ m, p }) {
+  if (m === "session.delta") {
+    if (!state.current || p.sessionId !== state.current.id) return;
+    state.turnSeen = true;
+    if (["text", "reasoning", "tool-call", "tool-result"].includes(p.kind)) state.running = true;
+    appendDelta(p);
+    updateComposer();
+    renderChat({ keepScroll: true });
+    return;
+  }
+  if (m === "approval.request") {
+    if (!p || p.state === "settled") {
+      if (p?.id) state.approvals.delete(p.id);
+    } else if (p?.id) {
+      state.approvals.set(p.id, p);
+    }
+    renderChat({ keepScroll: true });
+    return;
+  }
+}
+
+/* -------------------------------------------------------------------- ui -- */
+function openDrawer() { $("drawer").classList.add("show"); $("scrim").classList.add("show"); }
+function closeDrawer() { $("drawer").classList.remove("show"); $("scrim").classList.remove("show"); }
+function openSheet() { $("sheet-wrap").classList.add("show"); }
+function closeSheet() { $("sheet-wrap").classList.remove("show"); }
+
+/* ================================================================ v2 =====
+ *  新建会话 / 重命名 / 归档 / 置顶 / 分叉 / 指令技能 / 模型 / 权限 / 安全
+ * ========================================================================= */
+function openSheet2(title, nodes) {
+  const box = $("sheet2");
+  box.innerHTML = "";
+  box.appendChild(el("h2", null, title));
+  for (const node of nodes) if (node) box.appendChild(node);
+  $("sheet2-wrap").classList.add("show");
+}
+function closeSheet2() { $("sheet2-wrap").classList.remove("show"); }
+
+function listNodes(rows, onPick) {
+  const box = el("div", "slist");
+  for (const row of rows) {
+    const button = el("button", "sitem" + (row.active ? " active" : ""));
+    const left = el("div", "sitem-l");
+    left.appendChild(el("span", "sitem-t", row.title));
+    if (row.sub) left.appendChild(el("span", "sitem-sub", row.sub));
+    button.appendChild(left);
+    if (row.tag) button.appendChild(el("span", "sitem-tag", row.tag));
+    button.onclick = () => onPick(row);
+    box.appendChild(button);
+  }
+  if (!rows.length) box.appendChild(el("div", "empty empty-list", "没有可选项"));
+  return box;
+}
+
+function fieldBlock(labelText, control) {
+  const wrap = el("div", "field");
+  wrap.appendChild(el("label", null, labelText));
+  wrap.appendChild(control);
+  return wrap;
+}
+
+/** 应用内确认面板（部分手机浏览器的原生 confirm 会被拦截/静默）。 */
+function askConfirm(title, message, confirmLabel = "确认") {
+  return new Promise((resolve) => {
+    const text = el("div", "hint", message);
+    const row = el("div");
+    row.style.cssText = "display:flex;gap:8px;margin-top:10px";
+    const cancel = el("button", "btn ghost", "取消");
+    const ok = el("button", "btn danger", confirmLabel);
+    for (const button of [cancel, ok]) button.style.marginTop = "0";
+    row.append(cancel, ok);
+    cancel.onclick = () => { closeSheet2(); resolve(false); };
+    ok.onclick = () => { closeSheet2(); resolve(true); };
+    openSheet2(title, [text, row]);
+  });
+}
+
+async function api(method, payload = {}) {
+  if (!state.protocol) throw new Error("未连接");
+  return state.protocol.call(method, payload);
+}
+
+/* ---- 会话操作 ---- */
+function openSessionActions(row) {
+  closeDrawer();
+  const nodes = [listNodes([
+    { title: "重命名", tag: "标题", act: "rename" },
+    { title: "归档", sub: "从手机会话列表移除（电脑端仍保留该会话）", act: "archive" },
+    { title: "置顶", sub: "在电脑端会话列表置顶", act: "pin" },
+    { title: "取消置顶", act: "unpin" },
+    { title: "分叉会话", sub: "从这条会话复制出一条新会话", act: "fork" },
+    { title: "模型", sub: "切换本会话使用的模型", act: "model" },
+    { title: "推理强度", sub: "调整当前模型的思考强度（off/low/high/max…）", act: "effort" },
+    { title: "权限模式", sub: "切换本会话的审批/权限档位", act: "permission" },
+  ], (item) => { closeSheet2(); sessionAction(item.act, row); })];
+  openSheet2(row.title || "(未命名会话)", nodes);
+}
+
+async function sessionAction(act, row) {
+  try {
+    if (act === "rename") return openRenameSheet(row);
+    if (act === "archive") {
+      const ok = await askConfirm("归档会话", `归档「${row.title || "(未命名)"}」后，手机端会话列表将不再显示它（电脑端仍保留该会话）。`, "归档");
+      if (!ok) return;
+      await api("session.archive", { sessionId: row.id });
+      if (state.current?.id === row.id) {
+        state.current = null;
+        state.items = [];
+        state.approvals.clear();
+        $("sessionTitle").textContent = "选择会话";
+        $("sessionMeta").textContent = "—";
+        renderChat();
+      }
+      await refreshSessions();
+      toast("已归档");
+      return;
+    }
+    if (act === "pin") { await api("session.pin", { sessionId: row.id }); await refreshSessions(); toast("已置顶"); return; }
+    if (act === "unpin") { await api("session.unpin", { sessionId: row.id }); await refreshSessions(); toast("已取消置顶"); return; }
+    if (act === "fork") {
+      if (row.blank) return toast("空白会话没有可复制的回合，无法分叉");
+      const res = await api("session.fork", { sessionId: row.id });
+      const id = res?.sessionId ?? res?.id;
+      await refreshSessions();
+      const created = state.sessions.find((session) => session.id === id);
+      toast("已分叉");
+      if (created) await openSession(created);
+      return;
+    }
+    if (act === "model") return openModelSheet(row);
+    if (act === "effort") return openEffortSheetForSession(row);
+    if (act === "permission") return openPermissionSheet(row);
+  } catch (error) {
+    if (error.code === "session/fork-unavailable") {
+      return toast("这条会话还没有完成的回合，无法分叉");
+    }
+    toast("操作失败：" + error.message);
+  }
+}
+
+function openRenameSheet(row) {
+  const input = el("input", "field-input");
+  input.type = "text";
+  input.value = row.title || "";
+  input.maxLength = 200;
+  input.placeholder = "会话标题";
+  const save = el("button", "btn", "保存");
+  save.onclick = async () => {
+    const title = input.value.trim();
+    if (!title) return toast("标题不能为空");
+    try {
+      await api("session.rename", { sessionId: row.id, title });
+      if (state.current?.id === row.id) {
+        state.current.title = title;
+        $("sessionTitle").textContent = title;
+      }
+      closeSheet2();
+      await refreshSessions();
+      toast("已重命名");
+    } catch (error) {
+      toast("重命名失败：" + error.message);
+    }
+  };
+  openSheet2("重命名会话", [fieldBlock("标题", input), save]);
+  setTimeout(() => input.focus(), 60);
+}
+
+/* ---- 新建会话 ---- */
+async function openNewSession() {
+  closeDrawer();
+  let workspaces = state.workspaces;
+  let presets = state.presets;
+  try {
+    if (!workspaces) {
+      const res = await api("workspace.list", {});
+      workspaces = state.workspaces = res.workspaces || [];
+      state.archivedIds = res.archivedSessionIds || [];
+    }
+    if (!presets) {
+      const res = await api("presets.list", {});
+      presets = state.presets = res.presets || [];
+    }
+  } catch (error) {
+    toast("读取工作区失败：" + error.message);
+  }
+  workspaces = workspaces || [];
+  presets = presets || [];
+
+  const wsSelect = el("select", "sel");
+  if (!workspaces.length) wsSelect.appendChild(new Option("默认工作区", ""));
+  for (const ws of workspaces) {
+    wsSelect.appendChild(new Option(`${ws.title || ws.path} — ${ws.path}`, ws.path));
+  }
+  const presetSelect = el("select", "sel");
+  for (const preset of presets) presetSelect.appendChild(new Option(preset.name || preset.id, preset.id));
+  const defaultPreset = presets.find((preset) => preset.isDefault) || presets[0];
+  if (defaultPreset) presetSelect.value = defaultPreset.id;
+
+  const titleInput = el("input", "field-input");
+  titleInput.type = "text";
+  titleInput.placeholder = "标题（可留空，自动生成）";
+  titleInput.maxLength = 200;
+
+  const create = el("button", "btn", "创建并打开");
+  create.onclick = async () => {
+    create.disabled = true;
+    try {
+      const payload = {};
+      if (wsSelect.value) payload.cwd = wsSelect.value;
+      if (presetSelect.value) payload.agentPreset = presetSelect.value;
+      const res = await api("session.create", payload);
+      const id = res.sessionId || res.id;
+      if (titleInput.value.trim()) {
+        try { await api("session.rename", { sessionId: id, title: titleInput.value.trim() }); } catch {}
+      }
+      closeSheet2();
+      await refreshSessions();
+      const row = state.sessions.find((session) => session.id === id);
+      if (row) await openSession(row);
+      toast("已创建会话");
+    } catch (error) {
+      toast("创建失败：" + error.message);
+    } finally {
+      create.disabled = false;
+    }
+  };
+  openSheet2("新建会话", [
+    fieldBlock("工作区", wsSelect),
+    fieldBlock("预设（模式）", presetSelect),
+    fieldBlock("标题", titleInput),
+    create,
+  ]);
+}
+
+/* ---- 指令与技能 ---- */
+async function openCommandsSheet() {
+  if (!state.current) return toast("先打开一个会话");
+  const sessionId = state.current.id;
+  let items = state.commandsCache.get(sessionId);
+  if (!items) {
+    try {
+      const res = await api("session.commands", { sessionId });
+      items = res.items || [];
+      state.commandsCache.set(sessionId, items);
+    } catch (error) {
+      return toast("读取指令失败：" + error.message);
+    }
+  }
+  const search = el("input", "field-input");
+  search.type = "text";
+  search.placeholder = "搜索指令 / 技能";
+  const listBox = el("div", "slist");
+  const render = () => {
+    const q = search.value.trim().toLowerCase();
+    const rows = items
+      .filter((item) => !q || `${item.name} ${item.description || ""} ${item.kind || ""}`.toLowerCase().includes(q))
+      .map((item) => ({
+        title: (item.line || `/${item.name}`).trim(),
+        sub: item.description || "",
+        tag: item.kind === "skill" ? "技能" : "指令",
+        item,
+      }));
+    listBox.innerHTML = "";
+    listBox.appendChild(listNodes(rows, (row) => useCommand(row.item)));
+  };
+  search.oninput = render;
+  render();
+  openSheet2("指令与技能", [search, listBox]);
+}
+
+async function useCommand(item) {
+  const line = item.line || `/${item.name}`;
+  if (line.endsWith(" ")) {
+    const input = $("input");
+    input.value = line;
+    closeSheet2();
+    input.focus();
+    resizeInput();
+    return;
+  }
+  try {
+    const res = await api("session.command", { sessionId: state.current.id, line: line.trim() });
+    closeSheet2();
+    toast(res?.matched === false ? "宿主没有匹配到这条指令" : `已执行 ${line.trim()}`);
+    await refreshSessions();
+  } catch (error) {
+    toast("执行失败：" + error.message);
+  }
+}
+
+/* ---- 模型 / 推理强度 / 权限 ---- */
+function effortName(model, effortId) {
+  if (!effortId) return "";
+  const effort = (model?.reasoning?.efforts || []).find((item) => item.id === effortId);
+  return effort?.name || effortId;
+}
+
+async function openModelSheet(row) {
+  let res;
+  try {
+    res = await api("session.models", { sessionId: row.id });
+  } catch (error) {
+    return toast("读取模型失败：" + error.message);
+  }
+  const current = res.current || {};
+  const currentGroup = (res.groups || []).find((group) => group.id === current.provider);
+  const currentNode = (currentGroup?.models || []).find((model) => model.id === current.model);
+  const effortText = current.reasoningEffort
+    ? `推理强度：${effortName(currentNode, current.reasoningEffort)}`
+    : "推理强度：默认";
+  const nodes = [el("div", "hint", `当前：${current.provider || "?"} / ${current.model || "?"} · ${effortText}`)];
+
+  for (const group of res.groups || []) {
+    nodes.push(el("div", "sect", group.name || group.id));
+    nodes.push(listNodes((group.models || []).map((model) => {
+      const active = current.model === model.id && current.provider === group.id;
+      const defaultEffort = model.reasoning?.defaultEffort;
+      const suffix = defaultEffort ? ` · 默认 ${effortName(model, defaultEffort)}` : "";
+      const activeEffort = active && current.reasoningEffort ? ` · 当前 ${effortName(model, current.reasoningEffort)}` : "";
+      return {
+        title: model.name || model.id,
+        sub: `${model.id}${suffix}${activeEffort}`,
+        active,
+        tag: (model.reasoning?.efforts || []).length ? "可调强度" : "",
+        provider: group.id,
+        model,
+      };
+    }), async (pick) => {
+      try {
+        await api("session.setModel", { sessionId: row.id, provider: pick.provider, model: pick.model.id });
+      } catch (error) {
+        return toast("切换失败：" + error.message);
+      }
+      const efforts = pick.model.reasoning?.efforts || [];
+      if (efforts.length) {
+        // 切完模型直接进入强度选择（带默认/当前标记）
+        openEffortSheet(row, {
+          provider: pick.provider,
+          model: pick.model,
+          efforts,
+          defaultEffort: pick.model.reasoning?.defaultEffort,
+          activeEffort: current.model === pick.model.id ? current.reasoningEffort : undefined,
+        });
+      } else {
+        closeSheet2();
+        if (row.id === state.current?.id) refreshSettingsExtra();
+        toast(`模型已切换：${pick.model.name || pick.model.id}`);
+      }
+    }));
+  }
+
+  if ((currentNode?.reasoning?.efforts || []).length) {
+    const shortcut = el("button", "btn ghost", "调整当前模型的推理强度");
+    shortcut.onclick = () => openEffortSheet(row, {
+      provider: current.provider,
+      model: currentNode,
+      efforts: currentNode.reasoning.efforts,
+      defaultEffort: currentNode.reasoning.defaultEffort,
+      activeEffort: current.reasoningEffort,
+    });
+    nodes.push(shortcut);
+  }
+  openSheet2("选择模型", nodes);
+}
+
+function openEffortSheet(row, { provider, model, efforts, defaultEffort, activeEffort }) {
+  const nodes = [el("div", "hint", `模型：${model.name || model.id}（${provider}）`)];
+  nodes.push(listNodes(efforts.map((effort) => ({
+    title: effort.name || effort.id,
+    sub: effort.description || effort.id,
+    active: activeEffort === effort.id,
+    tag: effort.id === defaultEffort ? "默认" : "",
+    effort,
+  })), async (pick) => {
+    try {
+      await api("session.setEffort", { sessionId: row.id, provider, model: model.id, effort: pick.effort.id });
+      closeSheet2();
+      if (row.id === state.current?.id) refreshSettingsExtra();
+      toast(`推理强度：${pick.effort.name || pick.effort.id}`);
+    } catch (error) {
+      toast("切换失败：" + error.message);
+    }
+  }));
+  openSheet2("推理强度", nodes);
+}
+
+async function openEffortSheetForSession(row) {
+  try {
+    const res = await api("session.models", { sessionId: row.id });
+    const current = res.current || {};
+    const group = (res.groups || []).find((item) => item.id === current.provider);
+    const model = (group?.models || []).find((item) => item.id === current.model);
+    const efforts = model?.reasoning?.efforts || [];
+    if (!model || !efforts.length) return toast("当前模型不支持调整推理强度");
+    openEffortSheet(row, {
+      provider: current.provider,
+      model,
+      efforts,
+      defaultEffort: model.reasoning.defaultEffort,
+      activeEffort: current.reasoningEffort,
+    });
+  } catch (error) {
+    toast("读取推理强度失败：" + error.message);
+  }
+}
+
+async function openPermissionSheet(row) {
+  try {
+    const res = await api("session.permissions", { sessionId: row.id });
+    const current = res.current || {};
+    const nodes = [el("div", "hint", `当前：${current.name || current.id || "?"}`)];
+    nodes.push(listNodes((res.options || []).map((option) => ({
+      title: option.name || option.id,
+      sub: option.id,
+      active: current.id === option.id,
+      id: option.id,
+    })), async (pick) => {
+      try {
+        await api("session.setPermission", { sessionId: row.id, id: pick.id });
+        closeSheet2();
+        if (row.id === state.current?.id) refreshSettingsExtra();
+        toast("权限模式已切换");
+      } catch (error) {
+        toast("切换失败：" + error.message);
+      }
+    }));
+    openSheet2("权限模式", nodes);
+  } catch (error) {
+    toast("读取权限失败：" + error.message);
+  }
+}
+
+/* ---- 安全 / 设置补充 ---- */
+function renderSecurityRow() {
+  const server = state.server || localStorage.getItem(LS.server) || "";
+  const node = $("setSecure");
+  node.innerHTML = "";
+  const encrypted = serverIsEncrypted(server);
+  node.appendChild(el("span", "sec-badge " + (encrypted ? "ok" : "warn"),
+    encrypted ? "wss · TLS 加密" : "ws · 明文（仅限本机/局域网）"));
+}
+
+async function refreshSettingsExtra() {
+  renderSecurityRow();
+  $("setModel").textContent = "读取中…";
+  $("setEffort").textContent = "读取中…";
+  $("setPerm").textContent = "读取中…";
+  if (!state.current) {
+    $("setModel").textContent = "（先打开会话）";
+    $("setEffort").textContent = "（先打开会话）";
+    $("setPerm").textContent = "（先打开会话）";
+    return;
+  }
+  try {
+    const models = await api("session.models", { sessionId: state.current.id });
+    const current = models.current || {};
+    $("setModel").textContent = `${current.model || "?"}`;
+    if (current.reasoningEffort) {
+      const group = (models.groups || []).find((item) => item.id === current.provider);
+      const node = (group?.models || []).find((item) => item.id === current.model);
+      $("setEffort").textContent = `${effortName(node, current.reasoningEffort)}（${current.reasoningEffort}）`;
+    } else {
+      $("setEffort").textContent = "默认";
+    }
+  } catch {
+    $("setModel").textContent = "读取失败";
+    $("setEffort").textContent = "读取失败";
+  }
+  try {
+    const perms = await api("session.permissions", { sessionId: state.current.id });
+    $("setPerm").textContent = perms.current?.name || perms.current?.id || "?";
+  } catch {
+    $("setPerm").textContent = "读取失败";
+  }
+}
+
+/* ---- 竖屏 / 软键盘视口适配 ---- */
+function applyViewportMetrics() {
+  const viewport = window.visualViewport;
+  const root = document.documentElement;
+  const height = viewport ? viewport.height : window.innerHeight;
+  const keyboard = viewport ? Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop) : 0;
+  root.style.setProperty("--kb", `${Math.max(0, Math.round(keyboard))}px`);
+  root.style.setProperty("--vh", `${height / 100}px`);
+}
+
+function bindViewportMetrics() {
+  applyViewportMetrics();
+  window.addEventListener("resize", applyViewportMetrics, { passive: true });
+  window.addEventListener("orientationchange", () => setTimeout(applyViewportMetrics, 250), { passive: true });
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", applyViewportMetrics, { passive: true });
+    window.visualViewport.addEventListener("scroll", applyViewportMetrics, { passive: true });
+  }
+}
+
+function resizeInput() {
+  const input = $("input");
+  input.style.height = "auto";
+  input.style.height = Math.min(132, input.scrollHeight) + "px";
+}
+
+function bindUI() {
+  $("btnMenu").onclick = () => { openDrawer(); refreshSessions(); };
+  $("btnCloseDrawer").onclick = closeDrawer;
+  $("scrim").onclick = () => { closeDrawer(); closeSheet(); closeSheet2(); };
+  $("btnRefresh").onclick = () => refreshSessions();
+  $("btnNewSession").onclick = () => openNewSession();
+  $("btnCmd").onclick = () => openCommandsSheet();
+  $("btnSettings").onclick = () => { closeDrawer(); openSheet(); refreshSettingsExtra(); };
+  $("btnMore").onclick = () => { openSheet(); refreshSettingsExtra(); };
+  $("btnCloseSheet").onclick = closeSheet;
+  $("sheet-wrap").onclick = (e) => { if (e.target.id === "sheet-wrap") closeSheet(); };
+  $("sheet2-wrap").onclick = (e) => { if (e.target.id === "sheet2-wrap") closeSheet2(); };
+  $("search").oninput = (e) => { state.filter = e.target.value; renderSessions(); };
+
+  $("btnConnect").onclick = async () => {
+    const btn = $("btnConnect");
+    btn.disabled = true;
+    try {
+      const raw = $("pairUrl").value.trim();
+      if (raw) await pairAndConnect(raw);
+      else {
+        const server = $("serverUrl").value.trim();
+        const token = localStorage.getItem(LS.token) || "";
+        if (!server || !token) throw new Error("请粘贴配对链接，或先完成一次配对");
+        localStorage.setItem(LS.server, server);
+        const connected = await connectWithToken(server, token, false);
+        await afterConnected(connected, { deviceId: localStorage.getItem(LS.deviceId) || "" });
+      }
+    } catch (error) {
+      setConnState("", "连接失败：" + error.message);
+      toast("连接失败：" + error.message);
+    } finally {
+      btn.disabled = false;
+    }
+  };
+
+  $("btnReconnectSaved").onclick = async () => {
+    const server = localStorage.getItem(LS.server);
+    const token = localStorage.getItem(LS.token);
+    if (!server || !token) return toast("没有已保存的设备");
+    try {
+      const connected = await connectWithToken(server, token, false);
+      await afterConnected(connected, { deviceId: localStorage.getItem(LS.deviceId) || "" });
+    } catch (error) {
+      toast("重连失败：" + error.message);
+    }
+  };
+
+  $("btnRePair").onclick = () => {
+    closeSheet();
+    showScreen("connect");
+    $("pairUrl").value = "";
+    $("pairUrl").focus();
+  };
+  $("btnClear").onclick = () => {
+    localStorage.removeItem(LS.token);
+    localStorage.removeItem(LS.deviceId);
+    state.intentionalStop = true;
+    try { state.protocol?.close(); } catch {}
+    state.protocol = null;
+    state.deviceToken = "";
+    state.sessions = [];
+    state.current = null;
+    state.items = [];
+    closeSheet();
+    showScreen("connect");
+    setConnState("", "未连接");
+    $("connectStatus").textContent = "未连接";
+    $("btnReconnectSaved").classList.add("hidden");
+    toast("已清除本地凭据");
+  };
+  $("btnReload").onclick = () => location.reload();
+
+  $("btnDisconnect").onclick = () => {
+    state.intentionalStop = true;
+    try { state.protocol?.close(); } catch {}
+    state.protocol = null;
+    state.hello = null;
+    closeSheet();
+    setConnState("", "未连接");
+    showScreen("connect");
+    const token = localStorage.getItem(LS.token);
+    $("btnReconnectSaved").classList.toggle("hidden", !token);
+    $("connectStatus").textContent = token ? "已断开（可点「用已保存的设备重连」）" : "未连接";
+    toast("已断开连接");
+  };
+
+  $("send").onclick = sendMessage;
+  $("stop").onclick = stopTurn;
+  const input = $("input");
+  input.addEventListener("input", resizeInput);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+}
+
+/* ------------------------------------------------------------------ boot -- */
+async function boot() {
+  bindUI();
+  bindViewportMetrics();
+  // 支持 ?pair= 与 #pair= 深链；读取后立刻从地址栏抹掉，避免配对 token 残留到历史 / Referer
+  const query = new URLSearchParams(location.search);
+  const hash = new URLSearchParams(location.hash.replace(/^#/, ""));
+  const shared = hash.get("pair") || query.get("pair") || "";
+  if (shared) {
+    const demo = query.get("demo");
+    history.replaceState(null, "", location.pathname + (demo ? `?demo=${encodeURIComponent(demo)}` : ""));
+  }
+  const server = localStorage.getItem(LS.server);
+  const token = localStorage.getItem(LS.token);
+  if (server) {
+    $("serverUrl").value = server;
+  }
+  if (token) {
+    $("pairUrl").placeholder = `已保存设备：${server || ""}（直接点「用已保存的设备重连」）`;
+    $("btnReconnectSaved").classList.remove("hidden");
+    $("connectStatus").textContent = "有已保存的设备，正在自动连接…";
+    // 有已保存设备时自动连一次；失败则留在连接页
+    try {
+      const connected = await connectWithToken(server, token, false);
+      await afterConnected(connected, { deviceId: localStorage.getItem(LS.deviceId) || "" });
+      return;
+    } catch (error) {
+      setConnState("", "自动连接失败：" + error.message);
+      $("connectStatus").textContent = "自动连接失败：" + error.message + " —— 可重新配对";
+    }
+  }
+  if (shared) {
+    $("pairUrl").value = shared;
+    $("btnConnect").click();
+  }
+}
+
+boot();
+</script>
+</body>
+</html>
