@@ -240,6 +240,17 @@
   .sec-badge.bad{background:#3a1c1c;color:var(--err)}
   .empty-list{padding:36px 18px}
 
+  /* ---------- v4: 工作区分组 ---------- */
+  .ws-head{display:flex;align-items:center;gap:8px;padding:9px 8px 5px;margin:4px 0 2px;border-radius:9px;cursor:pointer;user-select:none}
+  .ws-head:active{background:var(--bg-3)}
+  .ws-chev{width:14px;flex:0 0 auto;font-size:13px;line-height:1;color:var(--fg-dim);transition:transform .15s;text-align:center}
+  .ws-head.collapsed .ws-chev{transform:rotate(-90deg)}
+  .ws-name{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+  .ws-title{font-size:13px;font-weight:600;color:var(--fg);letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ws-path{font-size:10.5px;color:var(--fg-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ws-count{flex:0 0 auto;font-size:10.5px;color:var(--fg-faint);background:var(--bg-3);border-radius:20px;padding:1px 7px}
+  .ws-body{padding-left:10px;margin-left:13px;border-left:1px solid var(--line);margin-bottom:6px}
+
   /* ========================================================= v3: 竖屏适配 ==
      窄屏（手机竖屏）专用：更大的触控目标、键盘避让、代码块/工具卡换行、
      抽屉与底部面板的安全区处理。桌面宽屏不受影响。 */
@@ -271,6 +282,11 @@
     #drawer{width:92%;max-width:380px}
     .drawer-head{padding:12px 12px 8px}
     #sessions{padding:6px 6px}
+    .ws-head{padding:11px 8px 6px;min-height:40px}
+    .ws-title{font-size:13.5px}
+    .ws-path{font-size:11px}
+    .ws-count{font-size:11px;padding:2px 8px}
+    .ws-body{margin-left:14px;padding-left:8px}
     .sess{padding:12px 8px 12px 10px;min-height:56px;margin-bottom:4px}
     .sess .st{font-size:14.5px}
     .sess .l2{font-size:11.5px}
@@ -382,7 +398,7 @@
         <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
     </div>
-    <div class="search"><input id="search" type="text" placeholder="搜索标题 / 目录" /></div>
+    <div class="search"><input id="search" type="text" placeholder="搜索会话 / 工作区" /></div>
   </div>
   <div id="sessions"></div>
   <div class="drawer-foot">
@@ -431,6 +447,7 @@ const LS = {
   token: "dshm.token",
   deviceId: "dshm.deviceId",
   caps: "dshm.caps",
+  collapsed: "dshm.collapsedGroups",
 };
 
 const CAPS = [
@@ -623,6 +640,7 @@ const state = {
   presets: null,          // presets.list 缓存
   archivedIds: null,      // workspace.list 返回的已归档 sessionId
   commandsCache: new Map(), // sessionId -> 指令/技能目录
+  collapsed: new Set(),     // 已折叠的工作区分组（cwd）
 };
 
 /* --------------------------------------------------------------- transcript */
@@ -921,34 +939,127 @@ function updateComposer() {
 }
 
 /* --------------------------------------------------------------- sessions */
+function loadCollapsedGroups() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(LS.collapsed) || "[]");
+    return new Set(Array.isArray(raw) ? raw : []);
+  } catch {
+    return new Set();
+  }
+}
+function saveCollapsedGroups() {
+  try {
+    localStorage.setItem(LS.collapsed, JSON.stringify([...state.collapsed]));
+  } catch {}
+}
+
+/** 工作区识别：优先匹配 workspace.list 的 path，退回目录名。 */
+function workspaceOf(cwd) {
+  const path = String(cwd || "").toLowerCase();
+  if (!path) return null;
+  return (state.workspaces || []).find((item) => String(item.path || "").toLowerCase() === path) || null;
+}
+function workspaceLabel(cwd) {
+  const ws = workspaceOf(cwd);
+  if (ws) return { title: ws.title || ws.path, path: ws.path || "" };
+  const raw = String(cwd || "").trim();
+  if (!raw) return { title: "未指定工作区", path: "" };
+  const parts = raw.split(/[\\/]+/).filter(Boolean);
+  return { title: parts[parts.length - 1] || raw, path: raw };
+}
+
+async function ensureWorkspaces() {
+  if (state.workspaces) return;
+  try {
+    const res = await api("workspace.list", {});
+    state.workspaces = res.workspaces || [];
+    state.archivedIds = res.archivedSessionIds || [];
+    renderSessions();
+  } catch {}
+}
+
+function sessionRowNode(row, groupCwd) {
+  const item = el("div", "sess" + (state.current?.id === row.id ? " cur" : ""));
+  const main = el("div", "sess-main");
+  const l1 = el("div", "l1");
+  l1.appendChild(el("span", "st", row.title || "(未命名会话)"));
+  if (row.agentRunning) l1.appendChild(el("span", "badge", "运行中"));
+  else if (row.blank) l1.appendChild(el("span", "badge blank", "空白"));
+  main.appendChild(l1);
+  // 会话 cwd 与分组工作区不一致时才显示路径（避免重复噪音）
+  const cwd = String(row.cwd || "");
+  if (cwd && cwd.toLowerCase() !== String(groupCwd || "").toLowerCase()) {
+    main.appendChild(el("div", "l2", cwd));
+  }
+  main.onclick = () => openSession(row);
+  const more = el("button", "sess-more", "⋯");
+  more.setAttribute("aria-label", "会话操作");
+  more.onclick = (event) => { event.stopPropagation(); openSessionActions(row); };
+  item.append(main, more);
+  return item;
+}
+
 function renderSessions() {
   const box = $("sessions");
   box.innerHTML = "";
   const filter = state.filter.trim().toLowerCase();
-  const rows = state.sessions.filter((s) => {
+  const matches = (session) => {
     if (!filter) return true;
-    const shown = `${s.title || "(未命名会话)"} ${s.cwd || ""} ${s.blank ? "空白" : ""} ${s.agentRunning ? "运行中" : ""}`;
+    const ws = workspaceLabel(session.cwd);
+    const shown = `${session.title || "(未命名会话)"} ${session.cwd || ""} ${ws.title} ${ws.path} ${session.blank ? "空白" : ""} ${session.agentRunning ? "运行中" : ""}`;
     return shown.toLowerCase().includes(filter);
-  });
-  rows.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
-  if (!rows.length) {
+  };
+
+  const groups = new Map();
+  for (const session of state.sessions) {
+    if (!matches(session)) continue;
+    const key = String(session.cwd || "");
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(session);
+  }
+  if (!groups.size) {
     box.appendChild(el("div", "empty", filter ? "没有匹配的会话" : "暂无会话"));
     return;
   }
-  for (const row of rows) {
-    const item = el("div", "sess" + (state.current?.id === row.id ? " cur" : ""));
-    const main = el("div", "sess-main");
-    const l1 = el("div", "l1");
-    l1.appendChild(el("span", "st", row.title || "(未命名会话)"));
-    if (row.agentRunning) l1.appendChild(el("span", "badge", "运行中"));
-    else if (row.blank) l1.appendChild(el("span", "badge blank", "空白"));
-    main.append(l1, el("div", "l2", row.cwd || row.id));
-    main.onclick = () => openSession(row);
-    const more = el("button", "sess-more", "⋯");
-    more.setAttribute("aria-label", "会话操作");
-    more.onclick = (event) => { event.stopPropagation(); openSessionActions(row); };
-    item.append(main, more);
-    box.appendChild(item);
+
+  const ordered = [...groups.entries()].map(([cwd, rows]) => {
+    rows.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+    return {
+      cwd,
+      rows,
+      latest: Math.max(0, ...rows.map((row) => row.updatedAt ?? 0)),
+      ...workspaceLabel(cwd),
+    };
+  }).sort((a, b) => b.latest - a.latest);
+
+  for (const group of ordered) {
+    const collapsed = !filter && state.collapsed.has(group.cwd);
+    const head = el("div", "ws-head" + (collapsed ? " collapsed" : ""));
+    head.setAttribute("role", "button");
+    head.tabIndex = 0;
+    head.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    const name = el("div", "ws-name");
+    name.appendChild(el("span", "ws-title", group.title));
+    if (group.path) name.appendChild(el("span", "ws-path", group.path));
+    const count = el("span", "ws-count", String(group.rows.length));
+    head.append(el("span", "ws-chev", "▾"), name, count);
+    if (!filter) {
+      const toggle = () => {
+        if (state.collapsed.has(group.cwd)) state.collapsed.delete(group.cwd);
+        else state.collapsed.add(group.cwd);
+        saveCollapsedGroups();
+        renderSessions();
+      };
+      head.onclick = toggle;
+      head.onkeydown = (event) => {
+        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); toggle(); }
+      };
+    }
+    box.appendChild(head);
+    if (collapsed) continue;
+    const body = el("div", "ws-body");
+    for (const row of group.rows) body.appendChild(sessionRowNode(row, group.cwd));
+    box.appendChild(body);
   }
 }
 
@@ -1092,6 +1203,7 @@ async function afterConnected(connected, { deviceId }) {
   state.reconnectAttempt = 0;
   state.intentionalStop = false;
   await refreshSessions();
+  ensureWorkspaces();
   if (!state.current) openDrawer();
   // QA 演示模式：?demo=approval|new|actions|model|effort —— 仅用于验证界面渲染
   const demo = new URLSearchParams(location.search).get("demo");
@@ -1652,7 +1764,7 @@ function resizeInput() {
 }
 
 function bindUI() {
-  $("btnMenu").onclick = () => { openDrawer(); refreshSessions(); };
+  $("btnMenu").onclick = () => { openDrawer(); ensureWorkspaces(); refreshSessions(); };
   $("btnCloseDrawer").onclick = closeDrawer;
   $("scrim").onclick = () => { closeDrawer(); closeSheet(); closeSheet2(); };
   $("btnRefresh").onclick = () => refreshSessions();
@@ -1754,6 +1866,7 @@ function bindUI() {
 async function boot() {
   bindUI();
   bindViewportMetrics();
+  state.collapsed = loadCollapsedGroups();
   // 支持 ?pair= 与 #pair= 深链；读取后立刻从地址栏抹掉，避免配对 token 残留到历史 / Referer
   const query = new URLSearchParams(location.search);
   const hash = new URLSearchParams(location.hash.replace(/^#/, ""));
