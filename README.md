@@ -40,6 +40,7 @@
 - 公网连接（桥的中继 wss / TLS）、自动重连、已配对设备自动登录
 - 手机竖屏适配（触控目标、软键盘避让、窄屏排版）
 - Markdown 渲染：标题 / 表格 / 列表 / 引用 / 代码块 / 行内样式
+- 图片消息查看：缩略图 + 全屏大图（需要本机桥补丁，见下）
 
 ## 安全说明
 
@@ -66,6 +67,17 @@ powershell -ExecutionPolicy Bypass -File tools\publish.ps1 -Message "更新说�
 ```
 
 脚本会把 `index.html`、`pair.cmd`、`tools/pair.ps1`、公开版 README 同步到发布仓库并推送，GitHub Pages 约 30–60 秒自动重建。
+
+## 图片消息（需要桥补丁）
+
+官方桥 0.4.16 的 `session.attachment` 与当前宿主 schema 不匹配，图片默认读不出来。本仓库客户端配套一个补丁：在运行 DSH 的电脑上执行
+
+```powershell
+node tools\patch-bridge.mjs apply    # 备份并打补丁，然后完整重启 DSH
+node tools\patch-bridge.mjs restore  # 还原官方版本
+```
+
+补丁只读 `~/.dsh/attachments/v1/objects` 下的图片，不做写操作；升级/重装桥后需重新 apply。
 
 ## 已知限制
 

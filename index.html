@@ -291,6 +291,29 @@
   .question-card .qrow{display:flex;gap:8px;margin-top:10px}
   .question-card .qrow .btn{margin:0;padding:10px 14px;font-size:14px}
 
+  /* ---------- images ---------- */
+  .msg-images{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  .img-thumb{position:relative;display:block;max-width:min(100%,320px);border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#0a0e15;padding:0;cursor:zoom-in;text-align:left}
+  .img-thumb img{display:block;width:100%;max-height:260px;object-fit:cover;transition:opacity .2s}
+  .img-thumb img.loading{opacity:.4;min-height:90px;min-width:160px;background:linear-gradient(90deg,#141c28,#1b2637,#141c28);background-size:200% 100%;animation:img-shimmer 1.2s linear infinite}
+  @keyframes img-shimmer{0%{background-position:0 0}100%{background-position:-200% 0}}
+  .img-thumb .img-meta{display:block;font-size:11px;color:var(--fg-faint);padding:4px 8px;border-top:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .img-thumb.broken{cursor:default}
+  .img-fallback{display:flex;align-items:center;gap:8px;padding:14px 12px;color:var(--fg-faint);font-size:12px;max-width:320px;line-height:1.5}
+  .img-fallback-icon{font-size:20px;flex:0 0 auto}
+  .tool .msg-images{margin:0 0 8px}
+  .tool .img-thumb{max-width:280px}
+
+  .lightbox{position:fixed;inset:0;z-index:90;background:rgba(3,6,10,.95);display:flex;flex-direction:column;
+    padding:calc(10px + var(--safe-t)) 10px calc(10px + var(--safe-b))}
+  .lb-bar{display:flex;align-items:center;gap:10px;padding:2px 4px 8px}
+  .lb-title{flex:1;min-width:0;font-size:13px;color:var(--fg-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .lb-close{width:38px;height:38px;border-radius:50%;background:var(--bg-3);color:var(--fg);font-size:16px;flex:0 0 auto}
+  .lb-stage{flex:1;display:grid;place-items:center;overflow:auto}
+  .lb-stage img{max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;cursor:zoom-in;transition:transform .18s}
+  .lb-stage img.zoomed{max-width:none;max-height:none;cursor:zoom-out}
+  .lb-hint{font-size:11px;color:var(--fg-faint);text-align:center;padding-top:6px}
+
   /* ========================================================= v3: 竖屏适配 ==
      窄屏（手机竖屏）专用：更大的触控目标、键盘避让、代码块/工具卡换行、
      抽屉与底部面板的安全区处理。桌面宽屏不受影响。 */
@@ -327,6 +350,9 @@
     .ws-path{font-size:11px}
     .ws-count{font-size:11px;padding:2px 8px}
     .ws-body{margin-left:14px;padding-left:8px}
+    .img-thumb{max-width:100%}
+    .img-thumb img{max-height:220px}
+    .lb-stage img{max-height:78vh}
     .question-card{padding:14px 12px}
     .question-card .qtext{font-size:15px}
     .question-card .qoption{min-height:46px;padding:11px 12px}
@@ -682,6 +708,7 @@ const state = {
   lastSeq: 0,
   approvals: new Map(),   // id -> payload
   questions: new Map(),   // sessionId/callId -> question payload
+  attachmentCache: new Map(), // attachmentId -> { dataUrl } | { error }
   reconnectAttempt: 0,
   intentionalStop: false,
   capsDeclared: [],
@@ -702,6 +729,27 @@ const extractReasoning = (content) => {
   return content.filter((b) => b && b.type === "reasoning" && typeof b.text === "string").map((b) => b.text).join("");
 };
 
+function extractImages(content) {
+  if (!Array.isArray(content)) return [];
+  const images = [];
+  for (const block of content) {
+    if (!block || block.type !== "image") continue;
+    const ref = block.attachment || block.source;
+    if (!ref) continue;
+    const attachmentId = ref.attachmentId || block.attachmentId;
+    if (!attachmentId) continue;
+    images.push({
+      attachmentId,
+      mediaType: ref.mediaType || block.mediaType || "image/png",
+      name: ref.name || block.name || "",
+      width: ref.width || block.width || 0,
+      height: ref.height || block.height || 0,
+      bytes: ref.bytes || block.bytes || 0,
+    });
+  }
+  return images;
+}
+
 function actorKindOf(source, actor) {
   if (actor && actor.kind) return actor.kind;
   const kind = source?.kind;
@@ -718,16 +766,18 @@ function itemsFromSnapshot(snapshot) {
       const data = entry.data || {};
       if (entry.type === "user/message") {
         const text = extractText(data.content);
+        const images = extractImages(data.content);
         const kind = actorKindOf(data.source, entry.actor);
-        if (!text) continue;
+        if (!text && !images.length) continue;
         if (kind === "system") continue; // 运行时上下文/技能目录等注入，不渲染
-        items.push({ kind: "user", text, actor: kind, time: entry.time, id: data.id });
+        items.push({ kind: "user", text, images, actor: kind, time: entry.time, id: data.id });
       } else if (entry.type === "assistant/message") {
         const content = data.message?.content || [];
         const text = extractText(content);
         const reasoning = extractReasoning(content);
-        if (!text && !reasoning) continue;
-        items.push({ kind: "agent", text, reasoning, time: entry.time });
+        const images = extractImages(content);
+        if (!text && !reasoning && !images.length) continue;
+        items.push({ kind: "agent", text, reasoning, images, time: entry.time });
       } else if (entry.type === "tool/call") {
         const item = {
           kind: "tool", callId: data.callId, name: data.name || "tool",
@@ -739,13 +789,15 @@ function itemsFromSnapshot(snapshot) {
       } else if (entry.type === "tool/result") {
         const callId = data.message?.toolCallId || data.toolCallId;
         const output = extractText(data.message?.content);
+        const images = extractImages(data.message?.content);
         const item = toolByCallId.get(callId);
         if (item) {
           item.output = output;
+          item.images = images;
           item.isError = Boolean(data.message?.isError || data.isError);
           item.done = true;
         } else {
-          items.push({ kind: "tool", callId, name: "tool", args: "", output, isError: false, done: true, time: entry.time });
+          items.push({ kind: "tool", callId, name: "tool", args: "", output, images, isError: false, done: true, time: entry.time });
         }
       } else if (entry.type === "subagent/catalog") {
         items.push({ kind: "note", text: `子代理：${data.label || data.childId || ""}`, time: entry.time });
@@ -761,7 +813,17 @@ function appendDelta(delta) {
       const actor = delta.actor?.kind || "human";
       if (actor === "system") return;
       finishStreaming();
-      state.items.push({ kind: "user", text: delta.text || "", actor, time: Date.now(), id: delta.messageId });
+      const images = Array.isArray(delta.attachments)
+        ? delta.attachments.map((ref) => ({
+            attachmentId: ref.attachmentId,
+            mediaType: ref.mediaType || "image/png",
+            name: ref.name || "",
+            width: ref.width || 0,
+            height: ref.height || 0,
+            bytes: ref.bytes || 0,
+          }))
+        : [];
+      state.items.push({ kind: "user", text: delta.text || "", images, actor, time: Date.now(), id: delta.messageId });
       break;
     }
     case "text": {
@@ -1129,14 +1191,131 @@ function renderChat({ keepScroll = false } = {}) {
     return;
   }
   for (const item of state.items) {
-    chat.appendChild(renderItem(item));
+    chat.appendChild(renderItem(item, state.current?.id));
   }
   for (const payload of state.questions.values()) chat.appendChild(renderQuestion(payload));
   for (const payload of state.approvals.values()) chat.appendChild(renderApproval(payload));
   if (keepScroll || nearBottom) chat.scrollTop = chat.scrollHeight;
 }
 
-function renderItem(item) {
+/* ------------------------------------------------------------------- images */
+function imageCaption(image) {
+  if (image.name) return image.name;
+  if (image.width && image.height) return `${image.width}×${image.height}`;
+  return "图片";
+}
+
+function formatBytes(bytes) {
+  if (!bytes) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function imageFallbackNode(message) {
+  const box = el("div", "img-fallback");
+  box.appendChild(el("span", "img-fallback-icon", "🖼"));
+  box.appendChild(el("span", "img-fallback-text", message));
+  return box;
+}
+
+function showImageFallback(img, message) {
+  const thumb = img.closest(".img-thumb") || img.parentElement;
+  if (!thumb) return;
+  img.remove();
+  thumb.classList.add("broken");
+  thumb.appendChild(imageFallbackNode(`图片加载失败：${message}`));
+}
+
+async function loadImageInto(img, sessionId, image) {
+  if (image.dataUrl) {
+    img.src = image.dataUrl;
+    img.classList.remove("loading");
+    return;
+  }
+  const cacheKey = image.attachmentId;
+  const cached = state.attachmentCache.get(cacheKey);
+  if (cached?.dataUrl) {
+    img.src = cached.dataUrl;
+    img.classList.remove("loading");
+    return;
+  }
+  if (cached?.error) {
+    showImageFallback(img, cached.error);
+    return;
+  }
+  img.classList.add("loading");
+  try {
+    if (!sessionId) throw new Error("未打开会话");
+    const res = await api("session.attachment", { sessionId, attachmentId: image.attachmentId });
+    const mediaType = res?.attachment?.mediaType || image.mediaType || "image/png";
+    if (!/^image\/(png|jpeg|webp|gif)$/.test(mediaType)) throw new Error("不支持的图片类型");
+    if (!res?.data) throw new Error("附件内容为空");
+    const dataUrl = `data:${mediaType};base64,${res.data}`;
+    state.attachmentCache.set(cacheKey, { dataUrl });
+    img.src = dataUrl;
+    img.classList.remove("loading");
+  } catch (error) {
+    const raw = String(error?.message || error);
+    // 桥 0.4.16 原生 session.attachment 会被宿主拒绝；打补丁并重启后即可读取
+    const friendly = raw.includes("input-invalid") || raw.includes("attachment-unreadable")
+      ? "桥未启用图片补丁（重启 DSH 后生效）"
+      : raw;
+    state.attachmentCache.set(cacheKey, { error: friendly });
+    showImageFallback(img, friendly);
+  }
+}
+
+function renderImageGallery(sessionId, images) {
+  const gallery = el("div", "msg-images");
+  for (const image of images) {
+    const thumb = el("button", "img-thumb");
+    thumb.setAttribute("aria-label", image.name || "查看图片");
+    const img = document.createElement("img");
+    img.alt = image.name || "图片";
+    img.loading = "lazy";
+    img.decoding = "async";
+    img.onclick = () => openLightbox(sessionId, image);
+    thumb.appendChild(img);
+    thumb.appendChild(el("span", "img-meta", `${imageCaption(image)}${image.bytes ? " · " + formatBytes(image.bytes) : ""}`));
+    gallery.appendChild(thumb);
+    loadImageInto(img, sessionId, image);
+  }
+  return gallery;
+}
+
+function openLightbox(sessionId, image) {
+  closeLightbox();
+  const wrap = el("div", "lightbox");
+  wrap.id = "lightbox";
+  wrap.setAttribute("role", "dialog");
+  wrap.setAttribute("aria-label", image.name || "图片查看");
+  const bar = el("div", "lb-bar");
+  bar.appendChild(el("div", "lb-title", `${imageCaption(image)}${image.bytes ? " · " + formatBytes(image.bytes) : ""}`));
+  const close = el("button", "lb-close", "✕");
+  close.setAttribute("aria-label", "关闭");
+  close.onclick = closeLightbox;
+  bar.appendChild(close);
+  const stage = el("div", "lb-stage");
+  const img = document.createElement("img");
+  img.alt = image.name || "图片";
+  img.onclick = () => img.classList.toggle("zoomed");
+  stage.appendChild(img);
+  const hint = el("div", "lb-hint", "点图片切换原始大小 · 点空白处或右上角关闭");
+  wrap.append(bar, stage, hint);
+  wrap.onclick = (event) => {
+    if (event.target === wrap || event.target === stage) closeLightbox();
+  };
+  document.body.appendChild(wrap);
+  loadImageInto(img, sessionId, image);
+}
+
+function closeLightbox() {
+  const node = document.getElementById("lightbox");
+  if (node) node.remove();
+}
+
+function renderItem(item, sessionId) {
   if (item.kind === "note") return el("div", "sys-note", item.text);
 
   if (item.kind === "tool") {
@@ -1158,6 +1337,7 @@ function renderItem(item) {
       pre.textContent = item.output.length > 8000 ? item.output.slice(0, 8000) + "\n…(截断)" : item.output;
       body.appendChild(pre);
     }
+    if (item.images?.length) body.appendChild(renderImageGallery(sessionId, item.images));
     details.appendChild(body);
     return details;
   }
@@ -1176,9 +1356,12 @@ function renderItem(item) {
     details.append(summary, body);
     bubble.appendChild(details);
   }
-  const text = el("div");
-  text.innerHTML = renderRich(item.text || "");
-  bubble.appendChild(text);
+  if (item.text) {
+    const text = el("div");
+    text.innerHTML = renderRich(item.text || "");
+    bubble.appendChild(text);
+  }
+  if (item.images?.length) bubble.appendChild(renderImageGallery(sessionId, item.images));
   wrap.appendChild(bubble);
   return wrap;
 }
@@ -1381,6 +1564,7 @@ async function openSession(row) {
   state.streaming = null;
   state.tools = new Map();
   state.approvals.clear();
+  closeLightbox();
   state.running = Boolean(row.agentRunning);
   $("sessionTitle").textContent = row.title || "(未命名会话)";
   $("sessionMeta").textContent = row.cwd || row.id;
@@ -1544,6 +1728,21 @@ async function afterConnected(connected, { deviceId }) {
             },
           });
           toast("演示问题卡片已注入");
+          return;
+        }
+        if (demo === "image") {
+          const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="360" height="200"><defs><linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="#4f9dff"/><stop offset="1" stop-color="#7c5cff"/></linearGradient></defs><rect width="360" height="200" rx="14" fill="url(#g)"/><text x="180" y="106" font-size="22" fill="#fff" text-anchor="middle" font-family="sans-serif">DSH image demo</text></svg>';
+          state.items.push({
+            kind: "agent",
+            time: Date.now(),
+            text: "图片消息渲染演示：内联图片 + 宿主真实附件（真实附件需要桥补丁 + 重启 DSH 才能读取）。点缩略图看大图。",
+            images: [
+              { name: "inline-demo.svg", mediaType: "image/svg+xml", width: 360, height: 200, dataUrl: "data:image/svg+xml;utf8," + encodeURIComponent(svg) },
+              { name: "browser-view.jpg", attachmentId: "sha256:0001a29cc642d8488dbe66f39b86c683b9385db29184a9d9241855f60ba5176b", mediaType: "image/jpeg", width: 1280, height: 800, bytes: 77019 },
+            ],
+          });
+          renderChat();
+          toast("图片演示已注入");
           return;
         }
         if (demo === "markdown") {
