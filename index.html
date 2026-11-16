@@ -249,6 +249,13 @@
   .ws-title{font-size:13px;font-weight:600;color:var(--fg);letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .ws-path{font-size:10.5px;color:var(--fg-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .ws-count{flex:0 0 auto;font-size:10.5px;color:var(--fg-faint);background:var(--bg-3);border-radius:20px;padding:1px 7px}
+  .ws-head.sub{margin-top:12px;border-top:1px solid var(--line);padding-top:12px}
+  .sess .badge.sub{background:#1b2a44;color:#8fb4ff}
+  .sess.sub .l1 .st{color:var(--fg-dim)}
+  #subBannerHost{position:sticky;top:0;z-index:6;margin-top:-14px;padding-top:14px;background:var(--bg)}
+  .sub-banner{display:flex;align-items:center;gap:8px;margin:0 0 10px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg-2);font-size:12px;color:var(--fg-faint)}
+  .sub-banner-t{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sub-banner-btn{flex:0 0 auto;border:1px solid var(--line);border-radius:8px;padding:4px 10px;font-size:12px;color:var(--fg)}
   .ws-body{padding-left:10px;margin-left:13px;border-left:1px solid var(--line);margin-bottom:6px}
 
   /* ---------- markdown blocks ---------- */
@@ -328,6 +335,7 @@
     .title-wrap .t1{font-size:15px}
     .title-wrap .t2{font-size:10.5px}
     #chat{padding:10px 9px 6px}
+    #subBannerHost{margin-top:-10px;padding-top:10px}
     .msg .bubble{font-size:15px;line-height:1.58;padding:9px 12px}
     .msg .who{font-size:10.5px}
     .bubble pre{font-size:11.5px;padding:9px}
@@ -723,6 +731,7 @@ const state = {
   commandsCache: new Map(), // sessionId -> 指令/技能目录
   collapsed: new Set(),     // 已折叠的工作区分组（cwd）
   expanded: new Set(),      // 展开过、重渲染后要保持打开的工具/思考卡片
+  subagentsOpen: false,     // 抽屉里「子智能体对话」分组是否展开（只在本次打开期间有效，默认收起）
 };
 
 /* --------------------------------------------------------------- transcript */
@@ -1272,6 +1281,10 @@ function renderChat({ keepScroll = false } = {}) {
   const chat = $("chat");
   const nearBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 160;
   chat.innerHTML = "";
+  const bannerHost = el("div");
+  bannerHost.id = "subBannerHost";
+  fillSubBanner(bannerHost);
+  if (bannerHost.childNodes.length) chat.appendChild(bannerHost);
   const hasApprovals = state.approvals.size > 0;
   const hasQuestions = state.questions.size > 0;
   if (!state.items.length && !hasApprovals && !hasQuestions) {
@@ -1290,6 +1303,52 @@ function renderChat({ keepScroll = false } = {}) {
   for (const payload of state.approvals.values()) chat.appendChild(renderApproval(payload));
   if (keepScroll || nearBottom) chat.scrollTop = chat.scrollHeight;
   updateImageBadge();
+}
+
+/** 会话顶部的「父/子对话」提示条：子智能体会话显示来源，父会话显示入口。 */
+function fillSubBanner(host) {
+  if (!host) return;
+  host.innerHTML = "";
+  const row = state.current;
+  if (!row) return;
+  if (isSubagentSession(row)) {
+    const parent = parentSessionOf(row);
+    const banner = el("div", "sub-banner");
+    banner.appendChild(el("span", "sub-banner-t", parent ? `子智能体对话 · 来自「${parent.title || "(未命名会话)"}」` : "子智能体对话 · 父会话不可见"));
+    if (parent) {
+      const open = el("button", "sub-banner-btn", "打开父会话");
+      open.onclick = () => openSession(parent);
+      banner.appendChild(open);
+    }
+    host.appendChild(banner);
+  }
+  const children = childSessionsOf(row.id);
+  if (!children.length) return;
+  const banner = el("div", "sub-banner");
+  banner.appendChild(el("span", "sub-banner-t", `本会话有 ${children.length} 个子智能体对话`));
+  const open = el("button", "sub-banner-btn", "查看");
+  open.onclick = () => openSubagents(row.id);
+  banner.appendChild(open);
+  host.appendChild(banner);
+}
+
+/** 列出某个父会话下的子智能体对话，点一条打开。 */
+function openSubagents(sessionId) {
+  const children = childSessionsOf(sessionId);
+  if (!children.length) return toast("本会话没有子智能体对话");
+  const rows = children
+    .slice()
+    .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+    .map((row) => ({
+      title: row.title || "(未命名会话)",
+      sub: [row.agentRunning ? "运行中" : "", shortTime(row.updatedAt)].filter(Boolean).join(" · "),
+      tag: row.blank ? "空白" : "",
+      active: state.current?.id === row.id,
+      row,
+    }));
+  openSheet2(`子智能体对话（${children.length}）`, [
+    listNodes(rows, (pick) => { closeSheet2(); openSession(pick.row); }),
+  ]);
 }
 
 /** 当前会话里能取到的图片（不含命名空间占位）。 */
@@ -1655,18 +1714,49 @@ async function ensureWorkspaces() {
   } catch {}
 }
 
-function sessionRowNode(row, groupCwd) {
-  const item = el("div", "sess" + (state.current?.id === row.id ? " cur" : ""));
+/* 子智能体会话由宿主标记 origin:"subagent" + parentSessionId；
+   桌面端侧栏只列主动发起的会话，子智能体默认收在抽屉底部一个分组里。 */
+function isSubagentSession(row) { return Boolean(row && row.origin === "subagent"); }
+function childSessionsOf(sessionId) {
+  return state.sessions.filter((row) => isSubagentSession(row) && row.parentSessionId === sessionId);
+}
+function subagentChildCounts() {
+  const counts = new Map();
+  for (const row of state.sessions) {
+    if (!isSubagentSession(row) || !row.parentSessionId) continue;
+    counts.set(row.parentSessionId, (counts.get(row.parentSessionId) || 0) + 1);
+  }
+  return counts;
+}
+function parentSessionOf(row) {
+  return row && row.parentSessionId ? state.sessions.find((item) => item.id === row.parentSessionId) : undefined;
+}
+function shortTime(ts) {
+  if (!ts) return "";
+  try { return new Date(ts).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }); } catch { return ""; }
+}
+
+function sessionRowNode(row, groupCwd, childCounts = new Map(), isSubagent = false) {
+  const item = el("div", "sess" + (state.current?.id === row.id ? " cur" : "") + (isSubagent ? " sub" : ""));
   const main = el("div", "sess-main");
   const l1 = el("div", "l1");
   l1.appendChild(el("span", "st", row.title || "(未命名会话)"));
   if (row.agentRunning) l1.appendChild(el("span", "badge", "运行中"));
   else if (row.blank) l1.appendChild(el("span", "badge blank", "空白"));
+  if (!isSubagent) {
+    const children = childCounts.get(row.id) || 0;
+    if (children) l1.appendChild(el("span", "badge sub", "子 " + children));
+  }
   main.appendChild(l1);
-  // 会话 cwd 与分组工作区不一致时才显示路径（避免重复噪音）
-  const cwd = String(row.cwd || "");
-  if (cwd && cwd.toLowerCase() !== String(groupCwd || "").toLowerCase()) {
-    main.appendChild(el("div", "l2", cwd));
+  if (isSubagent) {
+    const parent = parentSessionOf(row);
+    main.appendChild(el("div", "l2", parent ? "↳ 来自：" + (parent.title || "(未命名会话)") : "↳ 子智能体对话"));
+  } else {
+    // 会话 cwd 与分组工作区不一致时才显示路径（避免重复噪音）
+    const cwd = String(row.cwd || "");
+    if (cwd && cwd.toLowerCase() !== String(groupCwd || "").toLowerCase()) {
+      main.appendChild(el("div", "l2", cwd));
+    }
   }
   main.onclick = () => openSession(row);
   const more = el("button", "sess-more", "⋯");
@@ -1680,21 +1770,25 @@ function renderSessions() {
   const box = $("sessions");
   box.innerHTML = "";
   const filter = state.filter.trim().toLowerCase();
+  const childCounts = subagentChildCounts();
   const matches = (session) => {
     if (!filter) return true;
     const ws = workspaceLabel(session.cwd);
-    const shown = `${session.title || "(未命名会话)"} ${session.cwd || ""} ${ws.title} ${ws.path} ${session.blank ? "空白" : ""} ${session.agentRunning ? "运行中" : ""}`;
+    const shown = `${session.title || "(未命名会话)"} ${session.cwd || ""} ${ws.title} ${ws.path} ${session.blank ? "空白" : ""} ${session.agentRunning ? "运行中" : ""} ${isSubagentSession(session) ? "子智能体" : ""}`;
     return shown.toLowerCase().includes(filter);
   };
 
+  // 主列表只放主动发起的会话；子智能体统一收在底部一个分组里
+  const roots = state.sessions.filter((session) => !isSubagentSession(session) && matches(session));
+  const subagents = state.sessions.filter((session) => isSubagentSession(session) && matches(session));
+
   const groups = new Map();
-  for (const session of state.sessions) {
-    if (!matches(session)) continue;
+  for (const session of roots) {
     const key = String(session.cwd || "");
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(session);
   }
-  if (!groups.size) {
+  if (!groups.size && !subagents.length) {
     box.appendChild(el("div", "empty", filter ? "没有匹配的会话" : "暂无会话"));
     return;
   }
@@ -1735,8 +1829,37 @@ function renderSessions() {
     box.appendChild(head);
     if (collapsed) continue;
     const body = el("div", "ws-body");
-    for (const row of group.rows) body.appendChild(sessionRowNode(row, group.cwd));
+    for (const row of group.rows) body.appendChild(sessionRowNode(row, group.cwd, childCounts));
     box.appendChild(body);
+  }
+
+  if (subagents.length) {
+    const open = Boolean(filter) || state.subagentsOpen;
+    subagents.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+    const head = el("div", "ws-head sub" + (open ? "" : " collapsed"));
+    head.setAttribute("role", "button");
+    head.tabIndex = 0;
+    head.setAttribute("aria-expanded", open ? "true" : "false");
+    const name = el("div", "ws-name");
+    name.appendChild(el("span", "ws-title", "子智能体对话"));
+    name.appendChild(el("span", "ws-path", "默认收起 · 在父会话里打开"));
+    head.append(el("span", "ws-chev", "▾"), name, el("span", "ws-count", String(subagents.length)));
+    if (!filter) {
+      const toggle = () => {
+        state.subagentsOpen = !state.subagentsOpen;
+        renderSessions();
+      };
+      head.onclick = toggle;
+      head.onkeydown = (event) => {
+        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); toggle(); }
+      };
+    }
+    box.appendChild(head);
+    if (open) {
+      const body = el("div", "ws-body");
+      for (const row of subagents) body.appendChild(sessionRowNode(row, row.cwd, childCounts, true));
+      box.appendChild(body);
+    }
   }
 }
 
@@ -1745,6 +1868,8 @@ async function refreshSessions() {
     const res = await state.protocol.call("session.list", {});
     state.sessions = res.sessions || [];
     renderSessions();
+    const bannerHost = $("subBannerHost");
+    if (bannerHost) fillSubBanner(bannerHost);
   } catch (error) {
     toast("会话列表失败：" + error.message);
   }
