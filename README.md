@@ -72,7 +72,7 @@ powershell -ExecutionPolicy Bypass -File tools\publish.ps1 -Message "更新说�
 
 `@linxin666/dsh-remote-bridge` 0.4.19 起提供官方图片通道 `session.attachment.path`（协议 minor 22）：按会话 transcript 里登记的宿主绝对路径取图，`read_image` 与 offload 到磁盘的图片都能看。
 
-升级到 0.4.19 后**不需要**任何补丁；本页客户端会自动识别能力并优先走官方通道。
+升级到 0.4.19 后，**真实磁盘文件类**图片无需补丁；但工具截图（`browser_screenshot` 等）是内容寻址附件（`sha256:`，无真实路径），0.4.19 官方通道读不到，仍需本地桥补丁（脚本已适配 0.4.19）。
 
 > 旧版 0.4.16 的 `session.attachment` 与宿主 schema 不匹配，需要本地桥补丁才能看图（`tools\patch-bridge.mjs apply` 后完整重启 DSH；升级/重装桥后补丁会丢失）。浏览器命名空间截图（`browser-view:screenshot/...`，无真实文件）官方通道取不到。
 
