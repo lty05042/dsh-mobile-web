@@ -1089,6 +1089,37 @@ function finishStreaming() {
   }
 }
 
+/* 流式增量更新：思考/正文的 delta 每个 token 都来，整页重渲染会闪烁并抢滚动条。
+   这里只改正在流式的那个气泡的文本节点，结构性变化（工具卡、审批、回合结束）才整页渲染。 */
+let streamRenderTimer = 0;
+function scheduleStreamingRender() {
+  if (streamRenderTimer) return;
+  streamRenderTimer = setTimeout(() => {
+    streamRenderTimer = 0;
+    applyStreamingUpdate();
+  }, 80);
+}
+
+function applyStreamingUpdate() {
+  const item = state.streaming;
+  if (!item) return;
+  // 还没有渲染出节点（例如刚从快照/新回合开始）→ 渲染一次，把节点挂上
+  if (!item._reasonBody && !item._textEl) { renderChat(); return; }
+  if (item.text && !item._textEl) { renderChat(); return; }
+  const chat = $("chat");
+  const nearBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 160;
+  if (item._reasonBody && item.reasoning !== item._reasonShown) {
+    item._reasonBody.textContent = item.reasoning || "";
+    item._reasonShown = item.reasoning;
+  }
+  if (item._textEl && item.text !== item._textShown) {
+    item._textEl.innerHTML = renderRich(item.text || "");
+    item._textShown = item.text;
+  }
+  if (nearBottom) chat.scrollTop = chat.scrollHeight;
+  if (window.__streamProbe) window.__streamProbe.updates++;
+}
+
 /* ------------------------------------------------------------------ render */
 const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -1358,8 +1389,10 @@ async function refreshQuestions() {
 
 function renderChat({ keepScroll = false } = {}) {
   const chat = $("chat");
+  const previousTop = chat.scrollTop;
   const nearBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 160;
   chat.innerHTML = "";
+  if (window.__streamProbe) window.__streamProbe.wipes++;
   const bannerHost = el("div");
   bannerHost.id = "subBannerHost";
   fillSubBanner(bannerHost);
@@ -1381,6 +1414,7 @@ function renderChat({ keepScroll = false } = {}) {
   for (const payload of state.questions.values()) chat.appendChild(renderQuestion(payload));
   for (const payload of state.approvals.values()) chat.appendChild(renderApproval(payload));
   if (keepScroll || nearBottom) chat.scrollTop = chat.scrollHeight;
+  else chat.scrollTop = previousTop;
   updateImageBadge();
 }
 
@@ -1689,6 +1723,7 @@ function renderItem(item, sessionId) {
   const wrap = el("div", "msg " + (item.kind === "user" ? "user" : "agent") + (item.streaming ? " streaming" : ""));
   const who = el("div", "who");
   who.textContent = (item.kind === "user" ? (item.actor === "agent" ? "代理" : "我") : "DSH") + " · " + (item.time ? new Date(item.time).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "");
+  if (item.streaming) item._whoEl = who;
   wrap.appendChild(who);
   const bubble = el("div", "bubble");
 
@@ -1702,12 +1737,14 @@ function renderItem(item, sessionId) {
     const summary = el("summary", "", "思考过程");
     const body = el("div", "body");
     body.textContent = item.reasoning;
+    if (item.streaming) { item._reasonBody = body; item._reasonShown = item.reasoning; }
     details.append(summary, body);
     bubble.appendChild(details);
   }
   if (item.text) {
     const text = el("div");
     text.innerHTML = renderRich(item.text || "");
+    if (item.streaming) { item._textEl = text; item._textShown = item.text; }
     bubble.appendChild(text);
   }
   if (item.images?.length) bubble.appendChild(renderImageGallery(sessionId, item.images));
@@ -2209,6 +2246,62 @@ async function afterConnected(connected, { deviceId }) {
           toast("Markdown 演示已注入");
           return;
         }
+        if (demo === "imagecheck") {
+          const params = new URLSearchParams(location.search);
+          const target = state.sessions.find((item) => item.id === params.get("session")) || state.current || state.sessions[0];
+          if (!target) return toast("需要至少一个会话");
+          if (state.current?.id !== target.id) await openSession(target);
+          const rows = [];
+          for (const item of state.items) {
+            if (!item.images?.length) continue;
+            for (const image of item.images) {
+              rows.push(image.kind === "path" ? "path:" + image.path : "attachment:" + (image.attachmentId || image.name));
+            }
+          }
+          const hits = rows.filter((line) => line.includes("大肥鱼") || line.includes("蓝色"));
+          let load = "no-target";
+          const wanted = state.items.flatMap((item) => item.images || []).find((image) => String(image.path || "").includes("蓝色大肥鱼"));
+          if (wanted) {
+            try {
+              const result = await loadImage(state.current.id, wanted);
+              load = "ok " + (result?.length || 0) + " chars";
+            } catch (error) {
+              load = "error " + (error?.message || error);
+            }
+          }
+          console.log("[imagecheck]", JSON.stringify({ session: target.id, cwd: target.cwd, total: rows.length, hits, load }, null, 1));
+          toast(`图片解析：共 ${rows.length} 张，命中 ${hits.length} 张，取图 ${load}`);
+          return;
+        }
+        if (demo === "stream") {
+          const target = state.current || state.sessions[0];
+          if (!target) return toast("演示模式需要至少一个会话");
+          if (state.current?.id !== target.id) await openSession(target);
+          // 模拟一个回合：200 个思考 delta + 200 个正文 delta + 工具卡 + 回合结束
+          const probe = window.__streamProbe = { wipes: 0, updates: 0, t0: Date.now() };
+          const sid = state.current?.id || "demo";
+          handleEvent({ m: "session.delta", p: { sessionId: sid, kind: "user-message", text: "演示：流式渲染稳定性测试", actor: { kind: "human" } } });
+          let n = 0;
+          const timer = setInterval(() => {
+            n++;
+            if (n <= 60) {
+              handleEvent({ m: "session.delta", p: { sessionId: sid, kind: "reasoning", text: "思考片段" + n + "：" + "先看看需求，再决定方案。".repeat(2) } });
+            } else if (n <= 120) {
+              handleEvent({ m: "session.delta", p: { sessionId: sid, kind: "text", text: "正文片段" + (n - 60) + "：" + "这是一段用于测试流式渲染稳定性的文本。".repeat(2) } });
+            } else if (n === 121) {
+              handleEvent({ m: "session.delta", p: { sessionId: sid, kind: "tool-call", callId: "demo-call-1", name: "demo_tool", argumentsDelta: '{"x":1}' } });
+            } else if (n === 122) {
+              handleEvent({ m: "session.delta", p: { sessionId: sid, kind: "tool-result", callId: "demo-call-1", output: "ok", isError: false } });
+            } else if (n === 123) {
+              clearInterval(timer);
+              handleEvent({ m: "session.delta", p: { sessionId: sid, kind: "turn-end", reason: "stop" } });
+              probe.ms = Date.now() - probe.t0;
+              console.log("[stream demo]", JSON.stringify(probe));
+              toast("流式渲染演示完成：整页重渲染 " + probe.wipes + " 次 / 增量更新 " + probe.updates + " 次");
+            }
+          }, 25);
+          return;
+        }
         const row = state.current || state.sessions[0];
         if (demo === "new") return openNewSession(row);
         if (!row) return toast("演示模式需要至少一个会话");
@@ -2254,7 +2347,12 @@ function handleEvent({ m, p }) {
     if (["text", "reasoning", "tool-call", "tool-result"].includes(p.kind)) state.running = true;
     appendDelta(p);
     updateComposer();
-    renderChat({ keepScroll: true });
+    if (p.kind === "text" || p.kind === "reasoning") {
+      // 逐 token 的正文/思考不整页重渲染，避免闪烁和抢滚动条
+      scheduleStreamingRender();
+    } else {
+      renderChat();
+    }
     return;
   }
   if (m === "question.request") {
