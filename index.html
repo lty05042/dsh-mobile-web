@@ -748,6 +748,48 @@ const HOST_ABSOLUTE = /^(?:[A-Za-z]:[\\/]|[\\/])/;
 const basenameOf = (path) => String(path).split(/[\\/]/).filter(Boolean).pop() || String(path);
 const stripOffloads = (text) => text.replace(OFFLOAD_IMAGE, "");
 
+/* 最终回答里的 markdown 图片链接（`![alt](图片.jpg)` 或 `![alt](<图片.jpg>)`）：
+   文件通常就在会话 cwd 里。解析成绝对路径后按「路径图片」渲染，字节走
+   session.attachment.path（需要桥的会话目录回退补丁）。思考/工具过程里的图片不受影响。 */
+const LINK_IMAGE = /!\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/gu;
+const IMAGE_EXT = /\.(?:png|jpe?g|gif|webp)$/iu;
+
+/** 绝对化 markdown 链接：绝对路径原样返回，相对路径按会话 cwd 拼接；http/data 等返回 ""。 */
+function resolveHostImageHref(href, cwd) {
+  let raw = String(href || "").trim().replace(/^<|>$/g, "");
+  if (!raw) return "";
+  try { raw = decodeURIComponent(raw); } catch {}
+  if (HOST_ABSOLUTE.test(raw)) return raw;
+  if (!cwd) return "";
+  if (/^[a-z][a-z0-9+.-]*:/iu.test(raw) || raw.startsWith("//")) return "";
+  return String(cwd).replace(/[\\/]+$/, "") + "\\" + raw.replace(/\//g, "\\");
+}
+
+/** 正文里指向主机文件的 markdown 图片链接 → 图片卡片。 */
+function linkImagesOf(text, cwd) {
+  const images = [];
+  if (!text) return images;
+  for (const match of String(text).matchAll(LINK_IMAGE)) {
+    const path = resolveHostImageHref(match[2], cwd);
+    if (!path || !IMAGE_EXT.test(path)) continue;
+    if (images.some((image) => image.path === path)) continue;
+    images.push({ kind: "path", path, name: (match[1] || "").trim() || basenameOf(path), mediaType: "", width: 0, height: 0, bytes: 0 });
+  }
+  return images;
+}
+
+/** 去掉已渲染成图片卡片的 markdown 图片标记，正文里不再出现原文。 */
+function stripLinkImages(text, cwd) {
+  if (!text) return "";
+  return String(text)
+    .replace(LINK_IMAGE, (whole, alt, href) => {
+      const path = resolveHostImageHref(href, cwd);
+      return path && IMAGE_EXT.test(path) ? "" : whole;
+    })
+    .replace(/\n{3,}/g, "\n\n")
+    .trimEnd();
+}
+
 const extractText = (content) => {
   if (!Array.isArray(content)) return "";
   const text = content
@@ -897,17 +939,21 @@ function itemsFromSnapshot(snapshot) {
     for (const entry of turn.entries || []) {
       const data = entry.data || {};
       if (entry.type === "user/message") {
-        const text = extractText(data.content);
-        const images = extractImages(data.content);
+        const cwd = state.current?.cwd;
+        const rawText = extractText(data.content);
+        const text = stripLinkImages(rawText, cwd);
+        const images = extractImages(data.content).concat(linkImagesOf(rawText, cwd));
         const kind = actorKindOf(data.source, entry.actor);
         if (!text && !images.length) continue;
         if (kind === "system") continue; // 运行时上下文/技能目录等注入，不渲染
         items.push({ kind: "user", text, images, actor: kind, time: entry.time, id: data.id });
       } else if (entry.type === "assistant/message") {
+        const cwd = state.current?.cwd;
         const content = data.message?.content || [];
-        const text = extractText(content);
+        const rawText = extractText(content);
+        const text = stripLinkImages(rawText, cwd);
         const reasoning = extractReasoning(content);
-        const images = extractImages(content);
+        const images = extractImages(content).concat(linkImagesOf(rawText, cwd));
         if (!text && !reasoning && !images.length) continue;
         items.push({ kind: "agent", text, reasoning, images, time: entry.time });
       } else if (entry.type === "tool/call") {
@@ -1447,7 +1493,7 @@ function friendlyImageError(error) {
   const code = String(error?.code || "");
   const raw = String(error?.message || error || "未知错误");
   if (code === "unknown-method") return "当前桥不支持按路径取图（需要 bridge ≥ 0.4.19 并重启 DSH）";
-  if (code === "path-not-in-session") return "这条会话没有登记这张图（可能来自插件命名空间），无法读取";
+  if (code === "path-not-in-session") return "图片不在会话取图白名单里（最终回答里的图片需要桥的会话目录补丁：setup.ps1 -Patch 后完整重启 DSH）";
   if (code === "not-found") return "图片文件已不存在";
   if (code === "not-an-image") return "文件不是可显示的图片格式";
   if (code === "frame-too-large") return "图片太大（超过 10MB 帧上限）";
@@ -1556,7 +1602,18 @@ function renderImageGallery(sessionId, images) {
     img.decoding = "async";
     img.onclick = () => openLightbox(sessionId, image);
     thumb.appendChild(img);
-    thumb.appendChild(el("span", "img-meta", `${imageCaption(image)}${image.bytes ? " · " + formatBytes(image.bytes) : ""}`));
+    const meta = el("span", "img-meta", `${imageCaption(image)}${image.bytes ? " · " + formatBytes(image.bytes) : ""}`);
+    thumb.appendChild(meta);
+    img.addEventListener("load", () => {
+      // 路径通道补/回退时桥不一定给尺寸与字节数，渲染后从位图与 data URL 里补上。
+      let changed = false;
+      if (!image.width && img.naturalWidth) { image.width = img.naturalWidth; image.height = img.naturalHeight; changed = true; }
+      if (!image.bytes && img.src) {
+        const comma = img.src.indexOf(",");
+        if (comma > 0) { image.bytes = Math.max(0, Math.round((img.src.length - comma - 1) * 0.75)); changed = true; }
+      }
+      if (changed) meta.textContent = `${imageCaption(image)}${image.bytes ? " · " + formatBytes(image.bytes) : ""}`;
+    });
     gallery.appendChild(thumb);
     loadImageInto(img, sessionId, image);
   }
