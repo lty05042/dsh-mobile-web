@@ -40,7 +40,7 @@
 - 公网连接（桥的中继 wss / TLS）、自动重连、已配对设备自动登录
 - 手机竖屏适配（触控目标、软键盘避让、窄屏排版）
 - Markdown 渲染：标题 / 表格 / 列表 / 引用 / 代码块 / 行内样式
-- 图片消息查看：缩略图 + 全屏大图（bridge ≥ 0.4.19 官方通道，无需补丁；旧版见下）
+- 图片消息查看：缩略图 + 全屏大图（真实文件走 bridge ≥ 0.4.19 官方通道；`sha256:` 附件类需补丁；插件命名空间图片暂不支持）
 
 ## 安全说明
 
@@ -68,13 +68,14 @@ powershell -ExecutionPolicy Bypass -File tools\publish.ps1 -Message "更新说�
 
 脚本会把 `index.html`、`pair.cmd`、`tools/pair.ps1`、公开版 README 同步到发布仓库并推送，GitHub Pages 约 30–60 秒自动重建。
 
-## 图片消息（bridge ≥ 0.4.19 官方通道，推荐）
+## 图片消息（真实文件走官方通道；附件类需补丁）
 
 `@linxin666/dsh-remote-bridge` 0.4.19 起提供官方图片通道 `session.attachment.path`（协议 minor 22）：按会话 transcript 里登记的宿主绝对路径取图，`read_image` 与 offload 到磁盘的图片都能看。
 
 升级到 0.4.19 后，**真实磁盘文件类**图片无需补丁；但工具截图（`browser_screenshot` 等）是内容寻址附件（`sha256:`，无真实路径），0.4.19 官方通道读不到，仍需本地桥补丁（脚本已适配 0.4.19）。
 
-> 旧版 0.4.16 的 `session.attachment` 与宿主 schema 不匹配，需要本地桥补丁才能看图（`tools\patch-bridge.mjs apply` 后完整重启 DSH；升级/重装桥后补丁会丢失）。浏览器命名空间截图（`browser-view:screenshot/...`，无真实文件）官方通道取不到。
+> `sha256:` 内容寻址附件（工具返回的图片等）无论 0.4.16 还是 0.4.19，都需要本地桥补丁（`tools\patch-bridge.mjs apply` 后完整重启 DSH；升级/重装桥后补丁会丢失，需重新 apply）。
+> 插件命名空间图片（`browser-view:screenshot/...`）宿主侧没有可读取的文件或附件 id，任何通道都取不到，页面会显示「暂不支持」占位（电脑端不受影响）。
 
 ## 已知限制
 

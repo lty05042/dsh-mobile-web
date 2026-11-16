@@ -718,6 +718,7 @@ const state = {
   archivedIds: null,      // workspace.list 返回的已归档 sessionId
   commandsCache: new Map(), // sessionId -> 指令/技能目录
   collapsed: new Set(),     // 已折叠的工作区分组（cwd）
+  expanded: new Set(),      // 展开过、重渲染后要保持打开的工具/思考卡片
 };
 
 /* --------------------------------------------------------------- transcript */
@@ -750,13 +751,42 @@ const extractReasoning = (content) => {
 function extractImages(content) {
   if (!Array.isArray(content)) return [];
   const pathImages = [];
+  const unavailable = [];
   for (const block of content) {
     if (!block || block.type !== "text" || typeof block.text !== "string") continue;
     for (const match of block.text.matchAll(OFFLOAD_IMAGE)) {
       const path = match[1] || "";
-      // browser-view:screenshot/xxx.png 这类插件命名空间没有对应文件，取不到
-      if (!path || !HOST_ABSOLUTE.test(path)) continue;
       const stated = match[2] ? ENVELOPE_FACTS.exec(match[2].trim()) : null;
+      // 内容寻址附件（sha256:<hex>）走补丁后的 session.attachment 通道
+      if (/^sha256:[0-9a-f]{64}$/i.test(path)) {
+        unavailable.push({
+          kind: "attachment",
+          attachmentId: path,
+          source: "offload",
+          name: basenameOf(path).slice(0, 16) + "….png",
+          mediaType: stated ? stated[1] : "",
+          width: stated ? Number(stated[2]) : 0,
+          height: stated ? Number(stated[3]) : 0,
+          bytes: stated ? Number(stated[4]) : 0,
+        });
+        continue;
+      }
+      // browser-view:screenshot/xxx.png 这类插件命名空间没有对应文件，取不到
+      if (!path || !HOST_ABSOLUTE.test(path)) {
+        if (path) {
+          unavailable.push({
+            kind: "unavailable",
+            path,
+            name: basenameOf(path),
+            mediaType: stated ? stated[1] : "",
+            width: stated ? Number(stated[2]) : 0,
+            height: stated ? Number(stated[3]) : 0,
+            bytes: stated ? Number(stated[4]) : 0,
+            reason: "插件命名空间图片（无真实文件），手机端暂不支持",
+          });
+        }
+        continue;
+      }
       pathImages.push({
         kind: "path",
         path,
@@ -787,8 +817,10 @@ function extractImages(content) {
   }
   // 同一结果里“绝对路径占位符 + image 块”是同一张图（read_image 就这样持久化），
   // 这时只留官方路径通道，避免同一张图渲染两次。
-  if (pathImages.length && pathImages.length >= attachmentImages.length) return pathImages;
-  return pathImages.concat(attachmentImages);
+  const shaImages = unavailable.filter((entry) => entry.kind === "attachment");
+  const notices = unavailable.filter((entry) => entry.kind === "unavailable");
+  if (pathImages.length && pathImages.length >= attachmentImages.length) return pathImages.concat(shaImages, notices);
+  return pathImages.concat(attachmentImages, shaImages, notices);
 }
 
 function actorKindOf(source, actor) {
@@ -1366,6 +1398,12 @@ async function loadImageInto(img, sessionId, image) {
 function renderImageGallery(sessionId, images) {
   const gallery = el("div", "msg-images");
   for (const image of images) {
+    if (image.kind === "unavailable") {
+      const card = el("div", "img-thumb img-thumb-static");
+      card.appendChild(el("span", "img-meta", `${image.name || "图片"} · ${image.reason}`));
+      gallery.appendChild(card);
+      continue;
+    }
     const thumb = el("button", "img-thumb");
     thumb.setAttribute("aria-label", image.name || "查看图片");
     const img = document.createElement("img");
@@ -1417,6 +1455,11 @@ function renderItem(item, sessionId) {
 
   if (item.kind === "tool") {
     const details = el("details", "tool");
+    const cardKey = "tool:" + (item.callId || (item.name + ":" + (item.time || 0)));
+    if (state.expanded.has(cardKey)) details.open = true;
+    details.addEventListener("toggle", () => {
+      if (details.open) state.expanded.add(cardKey); else state.expanded.delete(cardKey);
+    });
     const summary = el("summary");
     const name = el("span", "tname", item.name);
     const stat = el("span", "tstat" + (item.done ? (item.isError ? " err" : " ok") : ""),
@@ -1431,8 +1474,9 @@ function renderItem(item, sessionId) {
     }
     if (item.output) {
       const pre = el("pre");
-      pre.textContent = item.output.length > 8000 ? item.output.slice(0, 8000) + "\n…(截断)" : item.output;
-      body.appendChild(pre);
+      const cleaned = stripOffloads(item.output).replace(/\n{3,}/g, "\n\n").trim();
+      pre.textContent = cleaned.length > 8000 ? cleaned.slice(0, 8000) + "\n…(截断)" : cleaned;
+      if (pre.textContent.trim()) body.appendChild(pre);
     }
     if (item.images?.length) body.appendChild(renderImageGallery(sessionId, item.images));
     details.appendChild(body);
@@ -1446,7 +1490,12 @@ function renderItem(item, sessionId) {
   const bubble = el("div", "bubble");
 
   if (item.reasoning) {
+    const thinkKey = "think:" + (item.kind || "") + ":" + (item.time || 0);
     const details = el("details", "think");
+    if (state.expanded.has(thinkKey)) details.open = true;
+    details.addEventListener("toggle", () => {
+      if (details.open) state.expanded.add(thinkKey); else state.expanded.delete(thinkKey);
+    });
     const summary = el("summary", "", "思考过程");
     const body = el("div", "body");
     body.textContent = item.reasoning;
@@ -1833,11 +1882,17 @@ async function afterConnected(connected, { deviceId }) {
           if (!target) { toast("需要至少一个会话来演示路径取图"); return; }
           if (state.current?.id !== target.id) await openSession(target);
           const realPath = params.get("path") || "";
+          const attachmentId = params.get("attachment") || "";
+          const image = attachmentId
+            ? { kind: "attachment", attachmentId, name: "attachment-" + attachmentId.slice(7, 15) + ".png" }
+            : { kind: "path", path: realPath, name: realPath.split(/[\\/]/).pop() };
           state.items.push({
             kind: "agent",
             time: Date.now(),
-            text: "官方路径通道演示（session.attachment.path）：这张图按宿主绝对路径读取，不需要任何本地补丁。",
-            images: [{ kind: "path", path: realPath, name: realPath.split(/[\\/]/).pop() }],
+            text: attachmentId
+              ? "附件通道演示（session.attachment）：这张图按附件 id 从宿主附件存储读取。"
+              : "官方路径通道演示（session.attachment.path）：这张图按宿主绝对路径读取。",
+            images: [image],
           });
           renderChat();
           toast("路径取图演示已注入");
