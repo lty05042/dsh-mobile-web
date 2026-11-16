@@ -303,6 +303,7 @@
   .img-fallback-icon{font-size:20px;flex:0 0 auto}
   .tool .msg-images{margin:0 0 8px}
   .tool .img-thumb{max-width:280px}
+  .tool-wrap{display:flex;flex-direction:column;gap:6px}
 
   .lightbox{position:fixed;inset:0;z-index:90;background:rgba(3,6,10,.95);display:flex;flex-direction:column;
     padding:calc(10px + var(--safe-t)) 10px calc(10px + var(--safe-b))}
@@ -823,6 +824,19 @@ function extractImages(content) {
   return pathImages.concat(attachmentImages, shaImages, notices);
 }
 
+/** 工具结果的 meta.path 是宿主登记过的绝对路径（read_image 等），直接作为路径图片。 */
+function imagesWithMeta(images, data) {
+  const meta = data?.meta;
+  const metaPath = meta?.path;
+  if (!metaPath || !HOST_ABSOLUTE.test(metaPath)) return images;
+  // read/其它文件工具的 meta.path 指向普通文件，不是图片；只认图片类型或同结果里已有图片块
+  const isImageMeta = /^image\//.test(meta?.mediaType || "") || meta?.kind === "image";
+  const hasImageBlock = images.some((image) => image.kind === "attachment" || image.kind === "path");
+  if (!isImageMeta && !hasImageBlock) return images;
+  if (images.some((image) => image.kind === "path" && image.path === metaPath)) return images;
+  return images.concat([{ kind: "path", path: metaPath, name: basenameOf(metaPath), mediaType: meta?.mediaType || "", width: 0, height: 0, bytes: 0 }]);
+}
+
 function actorKindOf(source, actor) {
   if (actor && actor.kind) return actor.kind;
   const kind = source?.kind;
@@ -862,7 +876,7 @@ function itemsFromSnapshot(snapshot) {
       } else if (entry.type === "tool/result") {
         const callId = data.message?.toolCallId || data.toolCallId;
         const output = extractText(data.message?.content);
-        const images = extractImages(data.message?.content);
+        const images = imagesWithMeta(extractImages(data.message?.content), data);
         const item = toolByCallId.get(callId);
         if (item) {
           item.output = output;
@@ -946,6 +960,8 @@ function appendDelta(delta) {
       state.running = false;
       updateComposer();
       refreshSessions().catch(() => {});
+      // 实时 delta 里工具结果只有文本，没有图片块；回合结束后拉一次快照补上图片
+      syncTranscriptSoon();
       break;
     }
     case "usage": {
@@ -1478,9 +1494,11 @@ function renderItem(item, sessionId) {
       pre.textContent = cleaned.length > 8000 ? cleaned.slice(0, 8000) + "\n…(截断)" : cleaned;
       if (pre.textContent.trim()) body.appendChild(pre);
     }
-    if (item.images?.length) body.appendChild(renderImageGallery(sessionId, item.images));
     details.appendChild(body);
-    return details;
+    if (!item.images?.length) return details;
+    const wrapTool = el("div", "tool-wrap");
+    wrapTool.append(details, renderImageGallery(sessionId, item.images));
+    return wrapTool;
   }
 
   const wrap = el("div", "msg " + (item.kind === "user" ? "user" : "agent") + (item.streaming ? " streaming" : ""));
@@ -1725,6 +1743,27 @@ async function openSession(row) {
     toast("打开会话失败：" + error.message);
   }
   try { await refreshSessions(); } catch {}
+}
+
+let transcriptSyncTimer = 0;
+/** 回合结束后静默重拉快照（补图片等只在快照里出现的内容），并保持滚动位置。 */
+function syncTranscriptSoon(delay = 900) {
+  clearTimeout(transcriptSyncTimer);
+  transcriptSyncTimer = setTimeout(async () => {
+    if (!state.current || state.running) return;
+    const sessionId = state.current.id;
+    const chat = $("chat");
+    const nearBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 120;
+    const scrollTop = chat.scrollTop;
+    try {
+      const snap = await state.protocol.call("session.snapshot", { sessionId });
+      if (!state.current || state.current.id !== sessionId || state.running) return;
+      state.items = itemsFromSnapshot(snap);
+      state.lastSeq = snap.lastSeq ?? state.lastSeq;
+      renderChat();
+      chat.scrollTop = nearBottom ? chat.scrollHeight : scrollTop;
+    } catch {}
+  }, delay);
 }
 
 /* ---------------------------------------------------------------- send/stop */
