@@ -40,7 +40,7 @@
 - 公网连接（桥的中继 wss / TLS）、自动重连、已配对设备自动登录
 - 手机竖屏适配（触控目标、软键盘避让、窄屏排版）
 - Markdown 渲染：标题 / 表格 / 列表 / 引用 / 代码块 / 行内样式
-- 图片消息查看：缩略图 + 全屏大图（需要本机桥补丁，见下）
+- 图片消息查看：缩略图 + 全屏大图（bridge ≥ 0.4.19 官方通道，无需补丁；旧版见下）
 
 ## 安全说明
 
@@ -68,22 +68,19 @@ powershell -ExecutionPolicy Bypass -File tools\publish.ps1 -Message "更新说�
 
 脚本会把 `index.html`、`pair.cmd`、`tools/pair.ps1`、公开版 README 同步到发布仓库并推送，GitHub Pages 约 30–60 秒自动重建。
 
-## 图片消息（需要桥补丁）
+## 图片消息（bridge ≥ 0.4.19 官方通道，推荐）
 
-官方桥 0.4.16 的 `session.attachment` 与当前宿主 schema 不匹配，图片默认读不出来。本仓库客户端配套一个补丁：在运行 DSH 的电脑上执行
+`@linxin666/dsh-remote-bridge` 0.4.19 起提供官方图片通道 `session.attachment.path`（协议 minor 22）：按会话 transcript 里登记的宿主绝对路径取图，`read_image` 与 offload 到磁盘的图片都能看。
 
-```powershell
-node tools\patch-bridge.mjs apply    # 备份并打补丁，然后完整重启 DSH
-node tools\patch-bridge.mjs restore  # 还原官方版本
-```
+升级到 0.4.19 后**不需要**任何补丁；本页客户端会自动识别能力并优先走官方通道。
 
-补丁只读 `~/.dsh/attachments/v1/objects` 下的图片，不做写操作；升级/重装桥后需重新 apply。
+> 旧版 0.4.16 的 `session.attachment` 与宿主 schema 不匹配，需要本地桥补丁才能看图（`tools\patch-bridge.mjs apply` 后完整重启 DSH；升级/重装桥后补丁会丢失）。浏览器命名空间截图（`browser-view:screenshot/...`，无真实文件）官方通道取不到。
 
 ## 已知限制
 
 - 不支持取消归档（桥不传输已归档会话）、附件上传、子代理详情
 - 配对需要电脑侧生成一次性码
-- 需要 DSH ≥ 0.2.2-rc.1 且已启用 `dsh-remote-bridge`
+- 需要 DSH ≥ 0.2.2-rc.1 且已启用 `dsh-remote-bridge`（图片官方通道建议 ≥ 0.4.19）
 
 ---
 
