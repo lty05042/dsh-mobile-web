@@ -437,6 +437,9 @@
       <div class="t2" id="sessionMeta">—</div>
     </div>
     <span class="dot" id="connDot" title="连接状态"></span>
+    <button class="icon-btn hidden" id="btnImages" aria-label="会话图片">
+      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.6"/><path d="M3 17l5-5 4 4 3-3 6 6"/></svg>
+    </button>
     <button class="icon-btn" id="btnMore" aria-label="设置">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
     </button>
@@ -1277,6 +1280,7 @@ function renderChat({ keepScroll = false } = {}) {
       ? "还没有消息。发一条试试。"
       : "从左上角菜单里选一个会话，或新建会话后开始对话。";
     chat.appendChild(empty);
+    updateImageBadge();
     return;
   }
   for (const item of state.items) {
@@ -1285,6 +1289,31 @@ function renderChat({ keepScroll = false } = {}) {
   for (const payload of state.questions.values()) chat.appendChild(renderQuestion(payload));
   for (const payload of state.approvals.values()) chat.appendChild(renderApproval(payload));
   if (keepScroll || nearBottom) chat.scrollTop = chat.scrollHeight;
+  updateImageBadge();
+}
+
+/** 当前会话里能取到的图片（不含命名空间占位）。 */
+function sessionImages() {
+  const images = [];
+  for (const item of state.items) {
+    if (!item.images?.length) continue;
+    for (const image of item.images) if (image.kind !== "unavailable") images.push(image);
+  }
+  return images;
+}
+
+function updateImageBadge() {
+  const button = $("btnImages");
+  if (!button) return;
+  const count = state.current ? sessionImages().length : 0;
+  button.classList.toggle("hidden", count === 0);
+  button.setAttribute("aria-label", `会话图片（${count}）`);
+}
+
+function openImageIndex() {
+  const images = sessionImages();
+  if (!images.length) return toast("这个会话暂时没有可显示的图片");
+  openSheet2(`会话图片（${images.length}）`, [renderImageGallery(state.current?.id, images)]);
 }
 
 /* ------------------------------------------------------------------- images */
@@ -2521,6 +2550,7 @@ function bindUI() {
   $("btnCmd").onclick = () => openCommandsSheet();
   $("btnSettings").onclick = () => { closeDrawer(); openSheet(); refreshSettingsExtra(); };
   $("btnMore").onclick = () => { openSheet(); refreshSettingsExtra(); };
+  $("btnImages").onclick = () => openImageIndex();
   $("btnCloseSheet").onclick = closeSheet;
   $("sheet-wrap").onclick = (e) => { if (e.target.id === "sheet-wrap") closeSheet(); };
   $("sheet2-wrap").onclick = (e) => { if (e.target.id === "sheet2-wrap") closeSheet2(); };
